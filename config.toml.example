@@ -1,0 +1,16 @@
+# Validator Finances Configuration
+# Copy this file to config.toml and fill in your API keys
+
+[api_keys]
+# Helius RPC API key (https://helius.dev)
+helius = "your-helius-api-key-here"
+
+# CoinGecko API key (https://www.coingecko.com/en/api)
+coingecko = "your-coingecko-api-key-here"
+
+[notion]
+# Notion integration token (https://www.notion.so/my-integrations)
+api_token = "your-notion-api-token-here"
+
+# Database ID for contractor hours log
+hours_database_id = "your-database-id-here"

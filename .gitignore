@@ -1,0 +1,18 @@
+# Build artifacts
+/target
+
+# Secrets - never commit
+config.toml
+
+# Local data (database, outputs)
+/data
+/output
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
