@@ -170,6 +170,22 @@ impl DuneClient {
     // Inflation Rewards
     // =========================================================================
 
+    /// Validate date format for SQL injection prevention
+    fn validate_date(date: &str) -> Result<()> {
+        // Date must be YYYY-MM-DD format
+        if date.len() != 10 {
+            anyhow::bail!("Invalid date format: expected YYYY-MM-DD, got '{}'", date);
+        }
+        // Parse to ensure it's a valid date
+        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .map_err(|_| anyhow::anyhow!("Invalid date: '{}' - must be YYYY-MM-DD", date))?;
+        // Additional check: only alphanumeric and dashes
+        if !date.chars().all(|c| c.is_ascii_digit() || c == '-') {
+            anyhow::bail!("Invalid characters in date: '{}'", date);
+        }
+        Ok(())
+    }
+
     /// Fetch inflation rewards from Dune
     ///
     /// Queries the solana.rewards table for Voting rewards to the vote account.
@@ -178,6 +194,7 @@ impl DuneClient {
         &self,
         start_date: &str,
     ) -> Result<Vec<crate::transactions::EpochReward>> {
+        Self::validate_date(start_date)?;
         println!("  Querying Dune for inflation rewards...");
 
         let sql = format!(
@@ -203,7 +220,7 @@ impl DuneClient {
         for row in rows {
             let epoch = get_u64(&row, "epoch")?;
             let reward_sol = get_f64(&row, "reward_sol")?;
-            let reward_lamports = (reward_sol * 1e9) as u64;
+            let reward_lamports = sol_to_lamports(reward_sol);
 
             rewards.push(crate::transactions::EpochReward {
                 epoch,
@@ -227,6 +244,7 @@ impl DuneClient {
     /// Queries the solana.rewards table for Fee rewards to the identity account.
     /// This captures transaction fees earned when producing blocks as leader.
     pub async fn fetch_leader_fees(&self, start_date: &str) -> Result<Vec<EpochLeaderFees>> {
+        Self::validate_date(start_date)?;
         println!("  Querying Dune for leader fees...");
 
         let sql = format!(
@@ -253,7 +271,7 @@ impl DuneClient {
             let epoch = get_u64(&row, "epoch")?;
             let blocks_produced = get_u64(&row, "blocks_produced")?;
             let total_fees_sol = get_f64(&row, "total_fees_sol")?;
-            let total_fees_lamports = (total_fees_sol * 1e9) as u64;
+            let total_fees_lamports = sol_to_lamports(total_fees_sol);
 
             fees.push(EpochLeaderFees {
                 epoch,
@@ -277,6 +295,7 @@ impl DuneClient {
     ///
     /// Queries the solana.vote_transactions table for votes signed by identity.
     pub async fn fetch_vote_costs(&self, start_date: &str) -> Result<Vec<EpochVoteCost>> {
+        Self::validate_date(start_date)?;
         println!("  Querying Dune for vote costs...");
 
         let sql = format!(
@@ -302,7 +321,7 @@ impl DuneClient {
             let epoch = get_u64(&row, "epoch")?;
             let vote_count = get_u64(&row, "vote_count")?;
             let total_fee_sol = get_f64(&row, "total_fee_sol")?;
-            let total_fee_lamports = (total_fee_sol * 1e9) as u64;
+            let total_fee_lamports = sol_to_lamports(total_fee_sol);
 
             costs.push(EpochVoteCost {
                 epoch,
@@ -326,6 +345,7 @@ impl DuneClient {
     /// Queries the tokens_solana.transfers table for native SOL transfers
     /// involving any of our tracked accounts.
     pub async fn fetch_transfers(&self, start_date: &str) -> Result<Vec<SolTransfer>> {
+        Self::validate_date(start_date)?;
         println!("  Querying Dune for SOL transfers...");
 
         // Build the account list from config
@@ -359,7 +379,7 @@ impl DuneClient {
                 OR to_owner IN ({})
               )
             ORDER BY block_slot DESC
-            LIMIT 1000
+            LIMIT 5000
             "#,
             start_date, account_list, account_list
         );
@@ -378,7 +398,7 @@ impl DuneClient {
             let timestamp = get_timestamp_opt(&row, "block_time");
 
             // Skip tiny transfers (dust)
-            let amount_lamports = (amount_sol * 1e9) as u64;
+            let amount_lamports = sol_to_lamports(amount_sol);
             if (amount_lamports as i64) < constants::MIN_TRANSFER_LAMPORTS {
                 continue;
             }
@@ -415,12 +435,35 @@ impl DuneClient {
 // Helper Functions
 // =============================================================================
 
-/// Extract u64 from JSON value
+/// Extract u64 from JSON value with bounds checking
 fn get_u64(row: &HashMap<String, serde_json::Value>, key: &str) -> Result<u64> {
     row.get(key)
         .and_then(|v| v.as_f64())
-        .map(|f| f as u64)
+        .map(safe_f64_to_u64)
         .ok_or_else(|| anyhow::anyhow!("Missing or invalid field: {}", key))
+}
+
+/// Safely convert f64 to u64 with bounds checking
+/// Returns 0 for negative values, u64::MAX for values that would overflow
+fn safe_f64_to_u64(f: f64) -> u64 {
+    if f.is_nan() || f < 0.0 {
+        0
+    } else if f >= u64::MAX as f64 {
+        u64::MAX
+    } else {
+        f as u64
+    }
+}
+
+/// Safely convert SOL amount to lamports with overflow protection
+fn sol_to_lamports(sol: f64) -> u64 {
+    if sol.is_nan() || sol < 0.0 {
+        0
+    } else if sol >= (u64::MAX as f64 / 1e9) {
+        u64::MAX
+    } else {
+        (sol * 1e9) as u64
+    }
 }
 
 /// Extract f64 from JSON value

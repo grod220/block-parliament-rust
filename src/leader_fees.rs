@@ -9,8 +9,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
-use std::thread;
 use std::time::Duration;
+use tokio::time::sleep;
 
 use crate::config::Config;
 use crate::constants;
@@ -110,7 +110,7 @@ pub async fn fetch_leader_fees(
         }
 
         // Rate limiting between epochs
-        thread::sleep(Duration::from_millis(100));
+        sleep(Duration::from_millis(100)).await;
     }
 
     Ok(all_fees)
@@ -167,7 +167,7 @@ async fn fetch_epoch_leader_fees(
         }
 
         // Rate limiting - be gentle with the RPC
-        thread::sleep(Duration::from_millis(constants::BLOCK_FETCH_DELAY_MS));
+        sleep(Duration::from_millis(constants::BLOCK_FETCH_DELAY_MS)).await;
     }
 
     let skipped = absolute_slots.len() as u64 - blocks_produced;
@@ -351,7 +351,7 @@ pub async fn fetch_fees_for_slots(
         }
 
         // Rate limiting
-        thread::sleep(Duration::from_millis(constants::BLOCK_FETCH_DELAY_MS));
+        sleep(Duration::from_millis(constants::BLOCK_FETCH_DELAY_MS)).await;
     }
 
     println!(

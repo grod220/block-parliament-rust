@@ -326,8 +326,14 @@ impl Cache {
         Ok(missing)
     }
 
-    /// Store epoch rewards
+    /// Store epoch rewards (in a transaction for atomicity)
     pub async fn store_epoch_rewards(&self, rewards: &[EpochReward]) -> Result<()> {
+        if rewards.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await?;
+
         for reward in rewards {
             sqlx::query(
                 "INSERT OR REPLACE INTO epoch_rewards
@@ -340,10 +346,11 @@ impl Cache {
             .bind(reward.commission as i64)
             .bind(reward.effective_slot as i64)
             .bind(&reward.date)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
         }
 
+        tx.commit().await?;
         Ok(())
     }
 
@@ -405,8 +412,14 @@ impl Cache {
         Ok(missing)
     }
 
-    /// Store leader fees
+    /// Store leader fees (in a transaction for atomicity)
     pub async fn store_leader_fees(&self, fees: &[EpochLeaderFees]) -> Result<()> {
+        if fees.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await?;
+
         for fee in fees {
             sqlx::query(
                 "INSERT OR REPLACE INTO leader_fees
@@ -420,10 +433,11 @@ impl Cache {
             .bind(fee.total_fees_lamports as i64)
             .bind(fee.total_fees_sol)
             .bind(&fee.date)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
         }
 
+        tx.commit().await?;
         Ok(())
     }
 
@@ -478,8 +492,14 @@ impl Cache {
         Ok(missing)
     }
 
-    /// Store MEV claims
+    /// Store MEV claims (in a transaction for atomicity)
     pub async fn store_mev_claims(&self, claims: &[MevClaim]) -> Result<()> {
+        if claims.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await?;
+
         for claim in claims {
             sqlx::query(
                 "INSERT OR REPLACE INTO mev_claims
@@ -491,10 +511,11 @@ impl Cache {
             .bind(claim.commission_lamports as i64)
             .bind(claim.amount_sol)
             .bind(&claim.date)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
         }
 
+        tx.commit().await?;
         Ok(())
     }
 
@@ -532,8 +553,14 @@ impl Cache {
             .collect())
     }
 
-    /// Store vote costs
+    /// Store vote costs (in a transaction for atomicity)
     pub async fn store_vote_costs(&self, costs: &[EpochVoteCost]) -> Result<()> {
+        if costs.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await?;
+
         for cost in costs {
             sqlx::query(
                 "INSERT OR REPLACE INTO vote_costs
@@ -546,10 +573,11 @@ impl Cache {
             .bind(cost.total_fee_sol)
             .bind(&cost.source)
             .bind(&cost.date)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
         }
 
+        tx.commit().await?;
         Ok(())
     }
 
@@ -566,16 +594,23 @@ impl Cache {
         Ok(rows.into_iter().collect())
     }
 
-    /// Store prices
+    /// Store prices (in a transaction for atomicity)
     pub async fn store_prices(&self, prices: &PriceCache) -> Result<()> {
+        if prices.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await?;
+
         for (date, price) in prices {
             sqlx::query("INSERT OR REPLACE INTO prices (date, usd_price) VALUES (?, ?)")
                 .bind(date)
                 .bind(price)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await?;
         }
 
+        tx.commit().await?;
         Ok(())
     }
 
@@ -735,12 +770,18 @@ impl Cache {
         Ok(row.and_then(|(slot,)| if slot > 0 { Some(slot as u64) } else { None }))
     }
 
-    /// Store transfers for a specific account
+    /// Store transfers for a specific account (in a transaction for atomicity)
     pub async fn store_transfers(
         &self,
         transfers: &[SolTransfer],
         account_key: &str,
     ) -> Result<()> {
+        if transfers.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await?;
+
         for transfer in transfers {
             sqlx::query(
                 "INSERT OR REPLACE INTO sol_transfers
@@ -762,10 +803,11 @@ impl Cache {
             .bind(category_to_string(&transfer.from_category))
             .bind(category_to_string(&transfer.to_category))
             .bind(account_key)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
         }
 
+        tx.commit().await?;
         Ok(())
     }
 

@@ -94,7 +94,8 @@ pub const BLOCK_FETCH_DELAY_MS: u64 = 50;
 pub const EPOCH_REWARD_DELAY_MS: u64 = 100;
 
 /// Maximum signatures to fetch per account
-pub const MAX_SIGNATURES_PER_ACCOUNT: usize = 500;
+/// Note: Increased from 500 to handle longer transaction history
+pub const MAX_SIGNATURES_PER_ACCOUNT: usize = 2000;
 
 // =============================================================================
 // Thresholds
@@ -105,3 +106,8 @@ pub const MIN_TRANSFER_LAMPORTS: i64 = 1_000_000; // 0.001 SOL
 
 /// Fallback SOL price if API fails
 pub const FALLBACK_SOL_PRICE: f64 = 185.0;
+
+/// Fallback date for missing dates in SFDP calculations
+/// Used when epoch->date conversion fails or date is unknown
+/// This should be updated to a reasonable current date periodically
+pub const FALLBACK_DATE: &str = "2025-12-15";

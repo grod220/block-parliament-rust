@@ -5,6 +5,8 @@
 
 use anyhow::Result;
 use serde::Deserialize;
+use std::time::Duration;
+use tokio::time::sleep;
 
 use crate::config::Config;
 use crate::constants;
@@ -35,7 +37,7 @@ struct JitoEpochData {
     priority_fee_rewards: u64,
 }
 
-/// Fetch MEV claims from Jito API
+/// Fetch MEV claims from Jito API with retry logic
 pub async fn fetch_mev_claims(config: &Config) -> Result<Vec<MevClaim>> {
     let client = reqwest::Client::new();
 
@@ -46,19 +48,55 @@ pub async fn fetch_mev_claims(config: &Config) -> Result<Vec<MevClaim>> {
     );
     println!("    Querying Jito API...");
 
-    let response = client
-        .get(&url)
-        .header("Accept", "application/json")
-        .send()
-        .await?;
+    // Retry with exponential backoff
+    let max_retries = 3;
+    let mut last_error = None;
 
-    if !response.status().is_success() {
-        anyhow::bail!("Jito API returned status: {}", response.status());
+    for attempt in 0..max_retries {
+        if attempt > 0 {
+            let delay = Duration::from_secs(2u64.pow(attempt as u32));
+            println!(
+                "    Retry {}/{} after {:?}...",
+                attempt,
+                max_retries - 1,
+                delay
+            );
+            sleep(delay).await;
+        }
+
+        match client
+            .get(&url)
+            .header("Accept", "application/json")
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    // API returns an array of epoch data directly
+                    let epochs: Vec<JitoEpochData> = response.json().await?;
+                    return process_jito_epochs(epochs);
+                } else if response.status().as_u16() == 429 {
+                    // Rate limited - always retry
+                    last_error = Some(anyhow::anyhow!("Rate limited (429)"));
+                    continue;
+                } else {
+                    last_error = Some(anyhow::anyhow!(
+                        "Jito API returned status: {}",
+                        response.status()
+                    ));
+                }
+            }
+            Err(e) => {
+                last_error = Some(anyhow::anyhow!("Request failed: {}", e));
+            }
+        }
     }
 
-    // API returns an array of epoch data directly
-    let epochs: Vec<JitoEpochData> = response.json().await?;
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Failed after {} retries", max_retries)))
+}
 
+/// Process Jito epoch data into MevClaims
+fn process_jito_epochs(epochs: Vec<JitoEpochData>) -> Result<Vec<MevClaim>> {
     println!("    Found {} epochs with MEV data", epochs.len());
 
     let mut claims = Vec::new();

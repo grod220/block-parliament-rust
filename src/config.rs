@@ -205,3 +205,122 @@ impl Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use solana_sdk::pubkey::Pubkey;
+
+    /// Create a minimal Config for testing SFDP calculations
+    fn test_config(sfdp_date: Option<&str>) -> Config {
+        Config {
+            vote_account: Pubkey::new_unique(),
+            identity: Pubkey::new_unique(),
+            withdraw_authority: Pubkey::new_unique(),
+            personal_wallet: Pubkey::new_unique(),
+            rpc_url: String::new(),
+            coingecko_api_key: String::new(),
+            dune_api_key: None,
+            commission_percent: 10,
+            jito_mev_commission_percent: 10,
+            first_reward_epoch: 900,
+            sfdp_acceptance_date: sfdp_date.map(|s| s.to_string()),
+            bootstrap_date: "2025-11-01".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_sfdp_no_acceptance_date() {
+        let config = test_config(None);
+        let date = NaiveDate::from_ymd_opt(2025, 12, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&date), 0.0);
+    }
+
+    #[test]
+    fn test_sfdp_before_acceptance() {
+        let config = test_config(Some("2025-12-01"));
+        let date = NaiveDate::from_ymd_opt(2025, 11, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&date), 0.0);
+    }
+
+    #[test]
+    fn test_sfdp_month_1_to_3_full_coverage() {
+        let config = test_config(Some("2025-12-01"));
+
+        // Month 1 (same month as acceptance)
+        let m1 = NaiveDate::from_ymd_opt(2025, 12, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m1), 1.0);
+
+        // Month 2
+        let m2 = NaiveDate::from_ymd_opt(2026, 1, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m2), 1.0);
+
+        // Month 3
+        let m3 = NaiveDate::from_ymd_opt(2026, 2, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m3), 1.0);
+    }
+
+    #[test]
+    fn test_sfdp_month_4_to_6_75_percent() {
+        let config = test_config(Some("2025-12-01"));
+
+        // Month 4
+        let m4 = NaiveDate::from_ymd_opt(2026, 3, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m4), 0.75);
+
+        // Month 5
+        let m5 = NaiveDate::from_ymd_opt(2026, 4, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m5), 0.75);
+
+        // Month 6
+        let m6 = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m6), 0.75);
+    }
+
+    #[test]
+    fn test_sfdp_month_7_to_9_50_percent() {
+        let config = test_config(Some("2025-12-01"));
+
+        // Month 7
+        let m7 = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m7), 0.50);
+
+        // Month 9
+        let m9 = NaiveDate::from_ymd_opt(2026, 8, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m9), 0.50);
+    }
+
+    #[test]
+    fn test_sfdp_month_10_to_12_25_percent() {
+        let config = test_config(Some("2025-12-01"));
+
+        // Month 10
+        let m10 = NaiveDate::from_ymd_opt(2026, 9, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m10), 0.25);
+
+        // Month 12
+        let m12 = NaiveDate::from_ymd_opt(2026, 11, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m12), 0.25);
+    }
+
+    #[test]
+    fn test_sfdp_after_12_months_no_coverage() {
+        let config = test_config(Some("2025-12-01"));
+
+        // Month 13 (12 months after December 2025 = December 2026)
+        let m13 = NaiveDate::from_ymd_opt(2026, 12, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&m13), 0.0);
+
+        // Well after program ends
+        let later = NaiveDate::from_ymd_opt(2027, 6, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&later), 0.0);
+    }
+
+    #[test]
+    fn test_sfdp_invalid_acceptance_date() {
+        let config = test_config(Some("invalid-date"));
+        let date = NaiveDate::from_ymd_opt(2025, 12, 15).unwrap();
+        assert_eq!(config.sfdp_coverage_percent(&date), 0.0);
+    }
+}

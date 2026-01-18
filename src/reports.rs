@@ -101,8 +101,20 @@ fn generate_income_ledger(
 
     // Note: SFDP reimbursements are NOT included in income - they are expense offsets
 
-    // MEV deposits (from transfer detection)
+    // MEV: Use Jito API claims as source of truth to avoid double-counting.
+    // mev_deposits (transfers) and mev_claims (API) represent the same income.
+    // Only use mev_deposits as fallback when mev_claims is empty.
+
+    // MEV deposits (from transfer detection) - only when no Jito API data
+    // These are fallback data when Jito API doesn't have epoch info
     for transfer in &categorized.mev_deposits {
+        // Skip if we have Jito API data for this epoch (avoid double-counting)
+        // Note: transfers don't have epoch directly, so we include them only if
+        // mev_claims is empty (no API data at all)
+        if !mev_claims.is_empty() {
+            continue;
+        }
+
         let date = transfer.date.as_deref().unwrap_or("unknown");
         let price = get_price(prices, date);
         let usd_value = transfer.amount_sol * price;
@@ -117,11 +129,11 @@ fn generate_income_ledger(
             &format!("{:.2}", price),
             &format!("{:.2}", usd_value),
             &transfer.signature[..16],
-            "MEV tip distribution from Jito",
+            "MEV tip distribution from Jito (fallback)",
         ])?;
     }
 
-    // MEV claims from Jito API
+    // MEV claims from Jito API (primary source)
     for claim in mev_claims {
         let date = claim.date.as_deref().unwrap_or("unknown");
         let price = get_price(prices, date);
@@ -206,8 +218,10 @@ fn generate_expense_ledger(
         let gross_usd = cost.total_fee_sol * price;
 
         // Calculate SFDP coverage for this epoch's date
-        let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-            .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(2025, 12, 15).unwrap());
+        let parsed_date =
+            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap_or_else(|_| {
+                chrono::NaiveDate::parse_from_str(constants::FALLBACK_DATE, "%Y-%m-%d").unwrap()
+            });
         let coverage = config.sfdp_coverage_percent(&parsed_date);
         let net_usd = gross_usd * (1.0 - coverage);
 
@@ -389,25 +403,29 @@ fn generate_summary(output_dir: &Path, data: &ReportData, year_filter: Option<i3
         }
     }
 
-    // MEV from transfers
-    for transfer in &data.categorized.mev_deposits {
-        if let Some(date) = &transfer.date {
-            let month = &date[..7];
-            let price = get_price(data.prices, date);
-            let entry = monthly.entry(month.to_string()).or_default();
-            entry.mev_sol += transfer.amount_sol;
-            entry.mev_usd += transfer.amount_sol * price;
+    // MEV: Use Jito API claims as source of truth to avoid double-counting.
+    // Only use mev_deposits as fallback when mev_claims is empty.
+    if data.mev_claims.is_empty() {
+        // Fallback: use transfer detection when no Jito API data
+        for transfer in &data.categorized.mev_deposits {
+            if let Some(date) = &transfer.date {
+                let month = &date[..7];
+                let price = get_price(data.prices, date);
+                let entry = monthly.entry(month.to_string()).or_default();
+                entry.mev_sol += transfer.amount_sol;
+                entry.mev_usd += transfer.amount_sol * price;
+            }
         }
-    }
-
-    // MEV from Jito API (with per-epoch dates)
-    for claim in data.mev_claims {
-        if let Some(date) = &claim.date {
-            let month = &date[..7];
-            let price = get_price(data.prices, date);
-            let entry = monthly.entry(month.to_string()).or_default();
-            entry.mev_sol += claim.amount_sol;
-            entry.mev_usd += claim.amount_sol * price;
+    } else {
+        // Primary: use Jito API data (per-epoch, accurate)
+        for claim in data.mev_claims {
+            if let Some(date) = &claim.date {
+                let month = &date[..7];
+                let price = get_price(data.prices, date);
+                let entry = monthly.entry(month.to_string()).or_default();
+                entry.mev_sol += claim.amount_sol;
+                entry.mev_usd += claim.amount_sol * price;
+            }
         }
     }
 
@@ -430,8 +448,10 @@ fn generate_summary(output_dir: &Path, data: &ReportData, year_filter: Option<i3
             let gross_usd = cost.total_fee_sol * price;
 
             // Calculate SFDP coverage for net cost
-            let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-                .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(2025, 12, 15).unwrap());
+            let parsed_date =
+                chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap_or_else(|_| {
+                    chrono::NaiveDate::parse_from_str(constants::FALLBACK_DATE, "%Y-%m-%d").unwrap()
+                });
             let coverage = data.config.sfdp_coverage_percent(&parsed_date);
             let net_usd = gross_usd * (1.0 - coverage);
 
@@ -626,47 +646,61 @@ pub fn print_summary(data: &ReportData, year_filter: Option<i32>) {
         .iter()
         .filter(|r| r.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|r| {
-            let price = get_price(data.prices, r.date.as_deref().unwrap_or("2025-12-15"));
+            let price = get_price(
+                data.prices,
+                r.date.as_deref().unwrap_or(constants::FALLBACK_DATE),
+            );
             r.amount_sol * price
         })
         .sum();
 
-    // MEV from transfers
-    let mev_transfer_sol: f64 = data
-        .categorized
-        .mev_deposits
-        .iter()
-        .filter(|t| t.date.as_deref().map(&matches_year).unwrap_or(false))
-        .map(|t| t.amount_sol)
-        .sum();
-    // MEV from ClaimStatus PDAs
-    let mev_claims_sol: f64 = data
-        .mev_claims
-        .iter()
-        .filter(|c| c.date.as_deref().map(&matches_year).unwrap_or(false))
-        .map(|c| c.amount_sol)
-        .sum();
-    let total_mev_sol = mev_transfer_sol + mev_claims_sol;
-
-    let total_mev_usd: f64 = data
-        .categorized
-        .mev_deposits
-        .iter()
-        .filter(|t| t.date.as_deref().map(&matches_year).unwrap_or(false))
-        .map(|t| {
-            let price = get_price(data.prices, t.date.as_deref().unwrap_or("2025-12-15"));
-            t.amount_sol * price
-        })
-        .sum::<f64>()
-        + data
+    // MEV: Use Jito API claims as source of truth to avoid double-counting.
+    // Only use mev_deposits as fallback when mev_claims is empty.
+    let (total_mev_sol, total_mev_usd) = if data.mev_claims.is_empty() {
+        // Fallback: use transfer detection
+        let mev_sol: f64 = data
+            .categorized
+            .mev_deposits
+            .iter()
+            .filter(|t| t.date.as_deref().map(&matches_year).unwrap_or(false))
+            .map(|t| t.amount_sol)
+            .sum();
+        let mev_usd: f64 = data
+            .categorized
+            .mev_deposits
+            .iter()
+            .filter(|t| t.date.as_deref().map(&matches_year).unwrap_or(false))
+            .map(|t| {
+                let price = get_price(
+                    data.prices,
+                    t.date.as_deref().unwrap_or(constants::FALLBACK_DATE),
+                );
+                t.amount_sol * price
+            })
+            .sum();
+        (mev_sol, mev_usd)
+    } else {
+        // Primary: use Jito API data
+        let mev_sol: f64 = data
+            .mev_claims
+            .iter()
+            .filter(|c| c.date.as_deref().map(&matches_year).unwrap_or(false))
+            .map(|c| c.amount_sol)
+            .sum();
+        let mev_usd: f64 = data
             .mev_claims
             .iter()
             .filter(|c| c.date.as_deref().map(&matches_year).unwrap_or(false))
             .map(|c| {
-                let price = get_price(data.prices, c.date.as_deref().unwrap_or("2025-12-15"));
+                let price = get_price(
+                    data.prices,
+                    c.date.as_deref().unwrap_or(constants::FALLBACK_DATE),
+                );
                 c.amount_sol * price
             })
-            .sum::<f64>();
+            .sum();
+        (mev_sol, mev_usd)
+    };
 
     // Leader fees from block production
     let total_leader_fees_sol: f64 = data
@@ -680,7 +714,10 @@ pub fn print_summary(data: &ReportData, year_filter: Option<i32>) {
         .iter()
         .filter(|f| f.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|f| {
-            let price = get_price(data.prices, f.date.as_deref().unwrap_or("2025-12-15"));
+            let price = get_price(
+                data.prices,
+                f.date.as_deref().unwrap_or(constants::FALLBACK_DATE),
+            );
             f.total_fees_sol * price
         })
         .sum();
@@ -706,7 +743,7 @@ pub fn print_summary(data: &ReportData, year_filter: Option<i32>) {
     let mut total_vote_costs_net_usd = 0.0;
 
     for cost in data.vote_costs {
-        let date = cost.date.as_deref().unwrap_or("2025-12-15");
+        let date = cost.date.as_deref().unwrap_or(constants::FALLBACK_DATE);
         if !matches_year(date) {
             continue;
         }
@@ -714,8 +751,10 @@ pub fn print_summary(data: &ReportData, year_filter: Option<i32>) {
         let gross_usd = cost.total_fee_sol * price;
 
         // Calculate SFDP coverage
-        let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-            .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(2025, 12, 15).unwrap());
+        let parsed_date =
+            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap_or_else(|_| {
+                chrono::NaiveDate::parse_from_str(constants::FALLBACK_DATE, "%Y-%m-%d").unwrap()
+            });
         let coverage = data.config.sfdp_coverage_percent(&parsed_date);
         let net_usd = gross_usd * (1.0 - coverage);
 

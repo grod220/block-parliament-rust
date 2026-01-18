@@ -1,9 +1,11 @@
 //! Historical price fetching from CoinGecko API
 
-use anyhow::{Context, Result};
-use chrono::{Duration, NaiveDate, Utc};
+use anyhow::Result;
+use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::time::Duration;
+use tokio::time::sleep;
 
 use crate::constants;
 use crate::transactions::{EpochReward, SolTransfer};
@@ -28,11 +30,22 @@ struct SolanaPrice {
     usd: f64,
 }
 
-/// Fetch historical prices for all dates in rewards and transfers
+/// Fetch historical prices for all dates in rewards and transfers.
+/// If `existing_prices` is provided, skip dates that are already cached.
 pub async fn fetch_historical_prices(
     rewards: &[EpochReward],
     transfers: &[SolTransfer],
     api_key: &str,
+) -> Result<PriceCache> {
+    fetch_historical_prices_with_cache(rewards, transfers, api_key, None).await
+}
+
+/// Fetch historical prices, skipping dates already in `existing_prices`.
+pub async fn fetch_historical_prices_with_cache(
+    rewards: &[EpochReward],
+    transfers: &[SolTransfer],
+    api_key: &str,
+    existing_prices: Option<&PriceCache>,
 ) -> Result<PriceCache> {
     let mut cache = PriceCache::new();
 
@@ -42,6 +55,10 @@ pub async fn fetch_historical_prices(
     for reward in rewards {
         if let Some(date) = &reward.date {
             if let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+                // Skip if already in existing cache
+                if existing_prices.is_some_and(|p| p.contains_key(date)) {
+                    continue;
+                }
                 if !dates.contains(&d) {
                     dates.push(d);
                 }
@@ -55,6 +72,10 @@ pub async fn fetch_historical_prices(
     for transfer in transfers {
         if let Some(date) = &transfer.date {
             if let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+                // Skip if already in existing cache
+                if existing_prices.is_some_and(|p| p.contains_key(date)) {
+                    continue;
+                }
                 if d >= min_valid_date && !dates.contains(&d) {
                     dates.push(d);
                 }
@@ -63,10 +84,12 @@ pub async fn fetch_historical_prices(
     }
 
     if dates.is_empty() {
-        // No dates to fetch, get current price
-        if let Ok(price) = fetch_current_price(api_key).await {
-            let today = Utc::now().format("%Y-%m-%d").to_string();
-            cache.insert(today, price);
+        // No dates to fetch, get current price if not cached
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        if existing_prices.is_none_or(|p| !p.contains_key(&today)) {
+            if let Ok(price) = fetch_current_price(api_key).await {
+                cache.insert(today, price);
+            }
         }
         return Ok(cache);
     }
@@ -121,7 +144,7 @@ async fn fetch_price_range(
     // Convert dates to Unix timestamps
     let from_ts = from.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
     // Add one day to 'to' to ensure we get the last day
-    let to_ts = (to + Duration::days(1))
+    let to_ts = (to + ChronoDuration::days(1))
         .and_hms_opt(0, 0, 0)
         .unwrap()
         .and_utc()
@@ -135,22 +158,55 @@ async fn fetch_price_range(
         to_ts
     );
 
-    let response = client
-        .get(&url)
-        .header("Accept", "application/json")
-        .header("x-cg-demo-api-key", api_key)
-        .send()
-        .await
-        .context("Failed to fetch from CoinGecko")?;
+    // Retry with exponential backoff
+    let max_retries = 3;
+    let mut last_error = None;
+    let mut data: Option<MarketChartResponse> = None;
 
-    if !response.status().is_success() {
-        anyhow::bail!("CoinGecko API returned status: {}", response.status());
+    for attempt in 0..max_retries {
+        if attempt > 0 {
+            let delay = Duration::from_secs(2u64.pow(attempt as u32));
+            sleep(delay).await;
+        }
+
+        match client
+            .get(&url)
+            .header("Accept", "application/json")
+            .header("x-cg-demo-api-key", api_key)
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.json::<MarketChartResponse>().await {
+                        Ok(d) => {
+                            data = Some(d);
+                            break;
+                        }
+                        Err(e) => {
+                            last_error = Some(anyhow::anyhow!("Parse error: {}", e));
+                        }
+                    }
+                } else if response.status().as_u16() == 429 {
+                    // Rate limited - always retry
+                    last_error = Some(anyhow::anyhow!("Rate limited (429)"));
+                    continue;
+                } else {
+                    last_error = Some(anyhow::anyhow!(
+                        "CoinGecko API returned status: {}",
+                        response.status()
+                    ));
+                }
+            }
+            Err(e) => {
+                last_error = Some(anyhow::anyhow!("Request failed: {}", e));
+            }
+        }
     }
 
-    let data: MarketChartResponse = response
-        .json()
-        .await
-        .context("Failed to parse CoinGecko response")?;
+    let data = data.ok_or_else(|| {
+        last_error.unwrap_or_else(|| anyhow::anyhow!("Failed after {} retries", max_retries))
+    })?;
 
     // Convert to date -> price map (use daily close price)
     let mut daily_prices: HashMap<String, f64> = HashMap::new();
@@ -167,7 +223,7 @@ async fn fetch_price_range(
     Ok(daily_prices.into_iter().collect())
 }
 
-/// Fetch current SOL price
+/// Fetch current SOL price with retry logic
 pub async fn fetch_current_price(api_key: &str) -> Result<f64> {
     let client = reqwest::Client::new();
 
@@ -177,22 +233,53 @@ pub async fn fetch_current_price(api_key: &str) -> Result<f64> {
         constants::COINGECKO_SIMPLE_PRICE
     );
 
-    let response = client
-        .get(&url)
-        .header("Accept", "application/json")
-        .header("x-cg-demo-api-key", api_key)
-        .send()
-        .await
-        .context("Failed to fetch current price")?;
+    // Retry with exponential backoff
+    let max_retries = 3;
+    let mut last_error = None;
 
-    let data: SimplePriceResponse = response
-        .json()
-        .await
-        .context("Failed to parse price response")?;
+    for attempt in 0..max_retries {
+        if attempt > 0 {
+            let delay = Duration::from_secs(2u64.pow(attempt as u32));
+            sleep(delay).await;
+        }
 
-    data.solana
-        .map(|s| s.usd)
-        .ok_or_else(|| anyhow::anyhow!("No SOL price in response"))
+        match client
+            .get(&url)
+            .header("Accept", "application/json")
+            .header("x-cg-demo-api-key", api_key)
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.json::<SimplePriceResponse>().await {
+                        Ok(data) => {
+                            return data
+                                .solana
+                                .map(|s| s.usd)
+                                .ok_or_else(|| anyhow::anyhow!("No SOL price in response"));
+                        }
+                        Err(e) => {
+                            last_error = Some(anyhow::anyhow!("Parse error: {}", e));
+                        }
+                    }
+                } else if response.status().as_u16() == 429 {
+                    last_error = Some(anyhow::anyhow!("Rate limited (429)"));
+                    continue;
+                } else {
+                    last_error = Some(anyhow::anyhow!(
+                        "API returned status: {}",
+                        response.status()
+                    ));
+                }
+            }
+            Err(e) => {
+                last_error = Some(anyhow::anyhow!("Request failed: {}", e));
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Failed after {} retries", max_retries)))
 }
 
 /// Get price for a specific date from cache, with fallback

@@ -13,8 +13,8 @@ use solana_transaction_status::{
     EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction, UiMessage, UiTransactionEncoding,
 };
 use std::str::FromStr;
-use std::thread;
 use std::time::Duration;
+use tokio::time::sleep;
 
 use crate::addresses::{self, AddressCategory};
 use crate::config::Config;
@@ -120,7 +120,7 @@ pub async fn fetch_inflation_rewards(
 
     for epoch in start_epoch..=end {
         // Rate limiting
-        thread::sleep(Duration::from_millis(constants::EPOCH_REWARD_DELAY_MS));
+        sleep(Duration::from_millis(constants::EPOCH_REWARD_DELAY_MS)).await;
 
         match client.get_inflation_reward(&[config.vote_account], Some(epoch)) {
             Ok(result) => {
@@ -219,13 +219,13 @@ pub async fn fetch_sol_transfers(config: &Config, verbose: bool) -> Result<Vec<S
                         break;
                     }
                     eprintln!("      Retry {}/{}: {}", retries, max_retries, e);
-                    thread::sleep(Duration::from_secs(2));
+                    sleep(Duration::from_secs(2)).await;
                     continue;
                 }
             }
 
             // Rate limiting
-            thread::sleep(Duration::from_millis(constants::RPC_SIGNATURE_DELAY_MS));
+            sleep(Duration::from_millis(constants::RPC_SIGNATURE_DELAY_MS)).await;
         }
 
         println!("      Found {} signatures", signatures.len());
@@ -237,7 +237,7 @@ pub async fn fetch_sol_transfers(config: &Config, verbose: bool) -> Result<Vec<S
 
         for sig_info in &signatures {
             if let Ok(sig) = Signature::from_str(&sig_info.signature) {
-                thread::sleep(Duration::from_millis(constants::RPC_TRANSACTION_DELAY_MS));
+                sleep(Duration::from_millis(constants::RPC_TRANSACTION_DELAY_MS)).await;
 
                 let tx_config = RpcTransactionConfig {
                     encoding: Some(UiTransactionEncoding::JsonParsed),
@@ -269,7 +269,7 @@ pub async fn fetch_sol_transfers(config: &Config, verbose: bool) -> Result<Vec<S
                             break;
                         }
                         Err(_) if retry < 2 => {
-                            thread::sleep(Duration::from_secs(1));
+                            sleep(Duration::from_secs(1)).await;
                         }
                         Err(_) => {
                             // Transaction might be too old or pruned
@@ -302,8 +302,21 @@ pub async fn fetch_sol_transfers(config: &Config, verbose: bool) -> Result<Vec<S
     }
 
     // Deduplicate (transfers might appear in both account histories)
-    all_transfers.sort_by(|a, b| a.signature.cmp(&b.signature));
-    all_transfers.dedup_by(|a, b| a.signature == b.signature);
+    // Use composite key: (signature, from, to, amount) since one tx can have multiple transfers
+    all_transfers.sort_by(|a, b| {
+        (&a.signature, &a.from, &a.to, a.amount_lamports).cmp(&(
+            &b.signature,
+            &b.from,
+            &b.to,
+            b.amount_lamports,
+        ))
+    });
+    all_transfers.dedup_by(|a, b| {
+        a.signature == b.signature
+            && a.from == b.from
+            && a.to == b.to
+            && a.amount_lamports == b.amount_lamports
+    });
 
     // Sort by timestamp (oldest first)
     all_transfers.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
@@ -394,12 +407,12 @@ pub async fn fetch_transfers_for_account(
                     break;
                 }
                 eprintln!("      Retry {}/{}: {}", retries, max_retries, e);
-                thread::sleep(Duration::from_secs(2));
+                sleep(Duration::from_secs(2)).await;
                 continue;
             }
         }
 
-        thread::sleep(Duration::from_millis(constants::RPC_SIGNATURE_DELAY_MS));
+        sleep(Duration::from_millis(constants::RPC_SIGNATURE_DELAY_MS)).await;
     }
 
     if stopped_at_cached {
@@ -423,7 +436,7 @@ pub async fn fetch_transfers_for_account(
 
     for sig_info in &signatures {
         if let Ok(sig) = Signature::from_str(&sig_info.signature) {
-            thread::sleep(Duration::from_millis(constants::RPC_TRANSACTION_DELAY_MS));
+            sleep(Duration::from_millis(constants::RPC_TRANSACTION_DELAY_MS)).await;
 
             let tx_config = RpcTransactionConfig {
                 encoding: Some(UiTransactionEncoding::JsonParsed),
@@ -460,7 +473,7 @@ pub async fn fetch_transfers_for_account(
                                 e
                             );
                         }
-                        thread::sleep(Duration::from_secs(1));
+                        sleep(Duration::from_secs(1)).await;
                     }
                 }
             }
