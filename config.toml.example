@@ -1,6 +1,42 @@
 # Validator Finances Configuration
-# Copy this file to config.toml and fill in your API keys
+# Copy this file to config.toml and fill in your values
 
+# =============================================================================
+# Validator Configuration
+# =============================================================================
+[validator]
+# Your validator's vote account address
+vote_account = "YourVoteAccountPubkeyHere"
+
+# Your validator's identity account address
+identity = "YourIdentityPubkeyHere"
+
+# Withdraw authority for the vote account
+withdraw_authority = "YourWithdrawAuthorityPubkeyHere"
+
+# Personal wallet used for seeding/withdrawals (for categorizing transfers)
+personal_wallet = "YourPersonalWalletPubkeyHere"
+
+# Commission percentage (0-100)
+commission_percent = 5
+
+# Jito MEV commission percentage (typically 10)
+jito_mev_commission_percent = 10
+
+# First epoch where your validator started earning rewards
+first_reward_epoch = 900
+
+# Date your validator was first set up (YYYY-MM-DD)
+# Used for querying historical transfers
+bootstrap_date = "2025-01-01"
+
+# SFDP (Solana Foundation Delegation Program) acceptance date, if applicable
+# Leave empty or remove if not in SFDP
+sfdp_acceptance_date = "2025-01-01"
+
+# =============================================================================
+# API Keys
+# =============================================================================
 [api_keys]
 # Helius RPC API key (https://helius.dev)
 helius = "your-helius-api-key-here"
@@ -8,6 +44,13 @@ helius = "your-helius-api-key-here"
 # CoinGecko API key (https://www.coingecko.com/en/api)
 coingecko = "your-coingecko-api-key-here"
 
+# Dune Analytics API key (optional, for backfilling pruned RPC data)
+# Get a key at https://dune.com/settings/api
+dune = "your-dune-api-key-here"
+
+# =============================================================================
+# Optional Integrations
+# =============================================================================
 [notion]
 # Notion integration token (https://www.notion.so/my-integrations)
 api_token = "your-notion-api-token-here"

@@ -1,7 +1,7 @@
 //! Centralized constants for the validator financial tracker
 //!
-//! This module contains all magic numbers, URLs, and configuration values
-//! to make them easy to find and update.
+//! This module contains universal constants that apply to all Solana validators.
+//! Validator-specific configuration is loaded from config.toml.
 
 // =============================================================================
 // API Endpoints
@@ -48,42 +48,11 @@ pub const REFERENCE_EPOCH: i64 = 896;
 pub const REFERENCE_EPOCH_TIMESTAMP: i64 = 1765843200;
 
 // =============================================================================
-// Block Parliament Validator Addresses
+// Known External Addresses (Solana ecosystem, not validator-specific)
 // =============================================================================
 
-/// Vote account address
-pub const VOTE_ACCOUNT: &str = "4PL2ZFoZJHgkbZ54US4qNC58X69Fa1FKtY4CaVKeuQPg";
-
-/// Validator identity address
-pub const IDENTITY: &str = "mD1afZhSisoXfJLT8nYwSFANqjr1KPoDUEpYTEfFX1e";
-
-/// Withdraw authority address
-pub const WITHDRAW_AUTHORITY: &str = "AN58nFDFdehKbP7d3KALhnCJAsWNE7cWpCR6dLVAj9xm";
-
-/// Personal wallet address (for seeding detection)
-pub const PERSONAL_WALLET: &str = "CDfxi8DUxspoFPjdiXGyKkewCuQ8wJMszbBEtT4FTMZX";
-
-/// SFDP vote cost reimbursement address
+/// SFDP vote cost reimbursement address (Solana Foundation)
 pub const SFDP_REIMBURSEMENT: &str = "DtZWL3BPKa5hw7yQYvaFR29PcXThpLHVU2XAAZrcLiSe";
-
-// =============================================================================
-// Validator Configuration
-// =============================================================================
-
-/// Commission percentage (5%)
-pub const COMMISSION_PERCENT: u8 = 5;
-
-/// Jito MEV commission percentage (10%)
-pub const JITO_MEV_COMMISSION_PERCENT: u8 = 10;
-
-/// First epoch with staking rewards
-pub const FIRST_REWARD_EPOCH: u64 = 900;
-
-/// SFDP acceptance date (epoch 896)
-pub const SFDP_ACCEPTANCE_DATE: &str = "2025-12-16";
-
-/// Validator bootstrap date
-pub const BOOTSTRAP_DATE: &str = "2025-11-19";
 
 // =============================================================================
 // File Names

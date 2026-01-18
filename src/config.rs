@@ -16,9 +16,39 @@ use crate::constants;
 /// Configuration loaded from config.toml
 #[derive(Debug, Deserialize)]
 pub struct FileConfig {
+    pub validator: ValidatorConfig,
     pub api_keys: ApiKeys,
     #[serde(default)]
     pub notion: Option<NotionConfig>,
+}
+
+/// Validator-specific configuration
+#[derive(Debug, Deserialize)]
+pub struct ValidatorConfig {
+    /// Vote account address
+    pub vote_account: String,
+    /// Identity account address
+    pub identity: String,
+    /// Withdraw authority address
+    pub withdraw_authority: String,
+    /// Personal wallet address (for categorizing seeding/withdrawals)
+    pub personal_wallet: String,
+    /// Commission percentage (0-100)
+    pub commission_percent: u8,
+    /// Jito MEV commission percentage
+    #[serde(default = "default_jito_commission")]
+    pub jito_mev_commission_percent: u8,
+    /// First epoch with staking rewards
+    pub first_reward_epoch: u64,
+    /// Bootstrap date (when validator was set up)
+    pub bootstrap_date: String,
+    /// SFDP acceptance date (optional - only if in SFDP program)
+    #[serde(default)]
+    pub sfdp_acceptance_date: Option<String>,
+}
+
+fn default_jito_commission() -> u8 {
+    10
 }
 
 /// API keys section
@@ -26,6 +56,8 @@ pub struct FileConfig {
 pub struct ApiKeys {
     pub helius: String,
     pub coingecko: String,
+    #[serde(default)]
+    pub dune: Option<String>,
 }
 
 /// Notion integration configuration
@@ -49,7 +81,7 @@ impl FileConfig {
 // Runtime Configuration
 // =============================================================================
 
-/// Main configuration struct
+/// Main configuration struct with parsed values
 pub struct Config {
     /// Vote account pubkey
     pub vote_account: Pubkey,
@@ -63,6 +95,9 @@ pub struct Config {
     pub rpc_url: String,
     /// CoinGecko API key
     pub coingecko_api_key: String,
+    /// Dune Analytics API key (optional, for backfilling pruned data)
+    #[allow(dead_code)]
+    pub dune_api_key: Option<String>,
     /// Commission percentage
     pub commission_percent: u8,
     /// Jito MEV commission percentage
@@ -71,21 +106,26 @@ pub struct Config {
     /// First epoch with rewards
     pub first_reward_epoch: u64,
     /// SFDP acceptance date (for calculating coverage schedule)
-    pub sfdp_acceptance_date: &'static str,
+    pub sfdp_acceptance_date: Option<String>,
     /// Bootstrap date (for finding initial seeding)
-    #[allow(dead_code)]
-    pub bootstrap_date: &'static str,
+    pub bootstrap_date: String,
 }
 
 impl Config {
     /// Create config from file config and optional RPC URL override
-    pub fn from_file(file_config: &FileConfig, rpc_url: Option<String>) -> Self {
-        Self {
-            // Block Parliament mainnet validator addresses
-            vote_account: Pubkey::from_str(constants::VOTE_ACCOUNT).unwrap(),
-            identity: Pubkey::from_str(constants::IDENTITY).unwrap(),
-            withdraw_authority: Pubkey::from_str(constants::WITHDRAW_AUTHORITY).unwrap(),
-            personal_wallet: Pubkey::from_str(constants::PERSONAL_WALLET).unwrap(),
+    pub fn from_file(file_config: &FileConfig, rpc_url: Option<String>) -> Result<Self> {
+        let validator = &file_config.validator;
+
+        Ok(Self {
+            // Parse validator addresses from config
+            vote_account: Pubkey::from_str(&validator.vote_account)
+                .with_context(|| "Invalid vote_account address")?,
+            identity: Pubkey::from_str(&validator.identity)
+                .with_context(|| "Invalid identity address")?,
+            withdraw_authority: Pubkey::from_str(&validator.withdraw_authority)
+                .with_context(|| "Invalid withdraw_authority address")?,
+            personal_wallet: Pubkey::from_str(&validator.personal_wallet)
+                .with_context(|| "Invalid personal_wallet address")?,
 
             // Helius RPC endpoint (has historical transaction data)
             rpc_url: rpc_url.unwrap_or_else(|| {
@@ -99,19 +139,22 @@ impl Config {
             // CoinGecko API key for price lookups
             coingecko_api_key: file_config.api_keys.coingecko.clone(),
 
-            // Commission rates
-            commission_percent: constants::COMMISSION_PERCENT,
-            jito_mev_commission_percent: constants::JITO_MEV_COMMISSION_PERCENT,
+            // Dune API key for backfilling pruned data
+            dune_api_key: file_config.api_keys.dune.clone(),
+
+            // Commission rates from config
+            commission_percent: validator.commission_percent,
+            jito_mev_commission_percent: validator.jito_mev_commission_percent,
 
             // First epoch where validator earned rewards
-            first_reward_epoch: constants::FIRST_REWARD_EPOCH,
+            first_reward_epoch: validator.first_reward_epoch,
 
-            // SFDP acceptance date (epoch 896)
-            sfdp_acceptance_date: constants::SFDP_ACCEPTANCE_DATE,
+            // SFDP acceptance date (optional)
+            sfdp_acceptance_date: validator.sfdp_acceptance_date.clone(),
 
             // Bootstrap date (when validator was first set up)
-            bootstrap_date: constants::BOOTSTRAP_DATE,
-        }
+            bootstrap_date: validator.bootstrap_date.clone(),
+        })
     }
 
     /// Check if a pubkey is one of our validator accounts
@@ -136,8 +179,13 @@ impl Config {
     pub fn sfdp_coverage_percent(&self, date: &chrono::NaiveDate) -> f64 {
         use chrono::NaiveDate;
 
-        let acceptance = NaiveDate::parse_from_str(self.sfdp_acceptance_date, "%Y-%m-%d")
-            .expect("Invalid SFDP acceptance date");
+        let Some(ref acceptance_str) = self.sfdp_acceptance_date else {
+            return 0.0; // Not in SFDP program
+        };
+
+        let Ok(acceptance) = NaiveDate::parse_from_str(acceptance_str, "%Y-%m-%d") else {
+            return 0.0; // Invalid date
+        };
 
         let months_diff = (date.year() - acceptance.year()) * 12
             + (date.month() as i32 - acceptance.month() as i32);
