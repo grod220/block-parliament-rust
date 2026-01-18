@@ -111,7 +111,11 @@ pub async fn fetch_historical_prices(
 }
 
 /// Fetch price range from CoinGecko
-async fn fetch_price_range(from: NaiveDate, to: NaiveDate, api_key: &str) -> Result<Vec<(String, f64)>> {
+async fn fetch_price_range(
+    from: NaiveDate,
+    to: NaiveDate,
+    api_key: &str,
+) -> Result<Vec<(String, f64)>> {
     let client = reqwest::Client::new();
 
     // Convert dates to Unix timestamps

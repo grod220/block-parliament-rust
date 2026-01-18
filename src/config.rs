@@ -41,8 +41,7 @@ impl FileConfig {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {}", path.display()))?;
 
-        toml::from_str(&content)
-            .with_context(|| "Failed to parse config.toml")
+        toml::from_str(&content).with_context(|| "Failed to parse config.toml")
     }
 }
 
@@ -90,7 +89,11 @@ impl Config {
 
             // Helius RPC endpoint (has historical transaction data)
             rpc_url: rpc_url.unwrap_or_else(|| {
-                format!("{}{}", constants::HELIUS_RPC_BASE, &file_config.api_keys.helius)
+                format!(
+                    "{}{}",
+                    constants::HELIUS_RPC_BASE,
+                    &file_config.api_keys.helius
+                )
             }),
 
             // CoinGecko API key for price lookups

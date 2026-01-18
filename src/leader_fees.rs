@@ -25,14 +25,15 @@ pub struct HistoricalLeaderSlots {
 
 /// Per-epoch slot information from Dune export
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // Fields from JSON may not all be used
 pub struct EpochSlotInfo {
     pub slot_count: u64,
     #[serde(default)]
-    pub first_slot: Option<u64>,
+    first_slot: Option<u64>,
     #[serde(default)]
-    pub last_slot: Option<u64>,
+    last_slot: Option<u64>,
     #[serde(default)]
-    pub note: Option<String>,
+    note: Option<String>,
 }
 
 /// Leader fee revenue for a single epoch
@@ -294,8 +295,7 @@ pub fn load_historical_slots(path: &Path) -> Result<HistoricalLeaderSlots> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
 
-    serde_json::from_str(&content)
-        .with_context(|| "Failed to parse historical leader slots JSON")
+    serde_json::from_str(&content).with_context(|| "Failed to parse historical leader slots JSON")
 }
 
 /// Fetch leader fees for specific slots (used for historical data import)
@@ -316,7 +316,11 @@ pub async fn fetch_fees_for_slots(
     let mut skipped: u64 = 0;
     let mut unavailable: u64 = 0;
 
-    println!("      Fetching {} slots for epoch {}...", slots.len(), epoch);
+    println!(
+        "      Fetching {} slots for epoch {}...",
+        slots.len(),
+        epoch
+    );
 
     for (i, slot) in slots.iter().enumerate() {
         match get_block_fee_reward(&client, &config.rpc_url, *slot, &identity).await {
@@ -336,19 +340,32 @@ pub async fn fetch_fees_for_slots(
 
         // Progress indicator every 20 slots
         if (i + 1) % 20 == 0 {
-            println!("        Progress: {}/{} slots ({} blocks, {} skipped, {} unavailable)",
-                i + 1, slots.len(), blocks_produced, skipped, unavailable);
+            println!(
+                "        Progress: {}/{} slots ({} blocks, {} skipped, {} unavailable)",
+                i + 1,
+                slots.len(),
+                blocks_produced,
+                skipped,
+                unavailable
+            );
         }
 
         // Rate limiting
         thread::sleep(Duration::from_millis(constants::BLOCK_FETCH_DELAY_MS));
     }
 
-    println!("      Epoch {} complete: {} blocks produced, {:.6} SOL in fees",
-        epoch, blocks_produced, total_fees as f64 / 1e9);
+    println!(
+        "      Epoch {} complete: {} blocks produced, {:.6} SOL in fees",
+        epoch,
+        blocks_produced,
+        total_fees as f64 / 1e9
+    );
 
     if unavailable > 0 {
-        println!("      Warning: {} slots had unavailable/pruned block data", unavailable);
+        println!(
+            "      Warning: {} slots had unavailable/pruned block data",
+            unavailable
+        );
     }
 
     Ok(EpochLeaderFees {
@@ -384,7 +401,9 @@ pub async fn import_historical_leader_fees(
     let mut results = Vec::new();
 
     // Process epochs in order
-    let mut epochs: Vec<_> = historical.slots_by_epoch.keys()
+    let mut epochs: Vec<_> = historical
+        .slots_by_epoch
+        .keys()
         .filter_map(|s| s.parse::<u64>().ok())
         .collect();
     epochs.sort();

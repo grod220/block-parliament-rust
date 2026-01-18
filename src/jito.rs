@@ -39,7 +39,11 @@ struct JitoEpochData {
 pub async fn fetch_mev_claims(config: &Config) -> Result<Vec<MevClaim>> {
     let client = reqwest::Client::new();
 
-    let url = format!("{}/validators/{}", constants::JITO_API_BASE, config.vote_account);
+    let url = format!(
+        "{}/validators/{}",
+        constants::JITO_API_BASE,
+        config.vote_account
+    );
     println!("    Querying Jito API...");
 
     let response = client

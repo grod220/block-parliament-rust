@@ -27,7 +27,14 @@ pub fn generate_all_reports(
     config: &Config,
     year_filter: Option<i32>,
 ) -> Result<()> {
-    generate_income_ledger(output_dir, rewards, categorized, mev_claims, leader_fees, prices)?;
+    generate_income_ledger(
+        output_dir,
+        rewards,
+        categorized,
+        mev_claims,
+        leader_fees,
+        prices,
+    )?;
     generate_expense_ledger(output_dir, expenses, vote_costs, prices, config)?;
     generate_treasury_ledger(output_dir, categorized, prices)?;
     generate_summary(
@@ -92,25 +99,7 @@ fn generate_income_ledger(
         ])?;
     }
 
-    // SFDP reimbursements
-    for transfer in &categorized.sfdp_reimbursements {
-        let date = transfer.date.as_deref().unwrap_or("unknown");
-        let price = get_price(prices, date);
-        let usd_value = transfer.amount_sol * price;
-
-        wtr.write_record([
-            date,
-            "",
-            "SFDP Reimbursement",
-            &transfer.from.to_string(),
-            &transfer.from_label,
-            &format!("{:.6}", transfer.amount_sol),
-            &format!("{:.2}", price),
-            &format!("{:.2}", usd_value),
-            &transfer.signature[..16],
-            "Vote cost reimbursement from Solana Foundation",
-        ])?;
-    }
+    // Note: SFDP reimbursements are NOT included in income - they are expense offsets
 
     // MEV deposits (from transfer detection)
     for transfer in &categorized.mev_deposits {
@@ -482,11 +471,10 @@ fn generate_summary(
         "Leader_Fees_USD",
         "MEV_SOL",
         "MEV_USD",
-        "SFDP_Reimb_SOL",
-        "SFDP_Reimb_USD",
         "Total_Revenue_USD",
         "Vote_Costs_SOL",
         "Vote_Costs_Gross_USD",
+        "SFDP_Offset_USD",
         "Vote_Costs_Net_USD",
         "Other_Expenses_USD",
         "Total_Expenses_USD",
@@ -500,7 +488,10 @@ fn generate_summary(
     // Filter by year if specified
     let months: Vec<_> = if let Some(year) = year_filter {
         let year_prefix = format!("{}-", year);
-        months.into_iter().filter(|m| m.starts_with(&year_prefix)).collect()
+        months
+            .into_iter()
+            .filter(|m| m.starts_with(&year_prefix))
+            .collect()
     } else {
         months
     };
@@ -513,8 +504,8 @@ fn generate_summary(
     for month in &months {
         let year = &month[..4];
         let data = &monthly[month];
-        let total_revenue =
-            data.commission_usd + data.leader_fees_usd + data.mev_usd + data.sfdp_usd;
+        // SFDP is expense offset, not revenue
+        let total_revenue = data.commission_usd + data.leader_fees_usd + data.mev_usd;
         let total_expenses = data.vote_costs_net_usd + data.other_expenses_usd;
         let net_profit = total_revenue - total_expenses;
 
@@ -540,6 +531,7 @@ fn generate_summary(
         annual.vote_costs_net_usd += data.vote_costs_net_usd;
         annual.other_expenses_usd += data.other_expenses_usd;
 
+        let sfdp_offset = data.vote_costs_gross_usd - data.vote_costs_net_usd;
         wtr.write_record([
             month,
             &format!("{:.4}", data.commission_sol),
@@ -548,11 +540,10 @@ fn generate_summary(
             &format!("{:.2}", data.leader_fees_usd),
             &format!("{:.4}", data.mev_sol),
             &format!("{:.2}", data.mev_usd),
-            &format!("{:.4}", data.sfdp_sol),
-            &format!("{:.2}", data.sfdp_usd),
             &format!("{:.2}", total_revenue),
             &format!("{:.4}", data.vote_costs_sol),
             &format!("{:.2}", data.vote_costs_gross_usd),
+            &format!("{:.2}", sfdp_offset),
             &format!("{:.2}", data.vote_costs_net_usd),
             &format!("{:.2}", data.other_expenses_usd),
             &format!("{:.2}", total_expenses),
@@ -567,11 +558,12 @@ fn generate_summary(
 
     for year in &years {
         let data = &annual_totals[year];
-        let total_revenue =
-            data.commission_usd + data.leader_fees_usd + data.mev_usd + data.sfdp_usd;
+        // SFDP is expense offset, not revenue
+        let total_revenue = data.commission_usd + data.leader_fees_usd + data.mev_usd;
         let total_expenses = data.vote_costs_net_usd + data.other_expenses_usd;
         let net_profit = total_revenue - total_expenses;
 
+        let sfdp_offset = data.vote_costs_gross_usd - data.vote_costs_net_usd;
         wtr.write_record([
             &format!("{} TOTAL", year),
             &format!("{:.4}", data.commission_sol),
@@ -580,11 +572,10 @@ fn generate_summary(
             &format!("{:.2}", data.leader_fees_usd),
             &format!("{:.4}", data.mev_sol),
             &format!("{:.2}", data.mev_usd),
-            &format!("{:.4}", data.sfdp_sol),
-            &format!("{:.2}", data.sfdp_usd),
             &format!("{:.2}", total_revenue),
             &format!("{:.4}", data.vote_costs_sol),
             &format!("{:.2}", data.vote_costs_gross_usd),
+            &format!("{:.2}", sfdp_offset),
             &format!("{:.2}", data.vote_costs_net_usd),
             &format!("{:.2}", data.other_expenses_usd),
             &format!("{:.2}", total_expenses),
@@ -647,12 +638,12 @@ pub fn print_summary(
     // Calculate totals (filtered by year if specified)
     let total_commission_sol: f64 = rewards
         .iter()
-        .filter(|r| r.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
+        .filter(|r| r.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|r| r.amount_sol)
         .sum();
     let total_commission_usd: f64 = rewards
         .iter()
-        .filter(|r| r.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
+        .filter(|r| r.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|r| {
             let price = get_price(prices, r.date.as_deref().unwrap_or("2025-12-15"));
             r.amount_sol * price
@@ -663,13 +654,13 @@ pub fn print_summary(
     let mev_transfer_sol: f64 = categorized
         .mev_deposits
         .iter()
-        .filter(|t| t.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
+        .filter(|t| t.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|t| t.amount_sol)
         .sum();
     // MEV from ClaimStatus PDAs
     let mev_claims_sol: f64 = mev_claims
         .iter()
-        .filter(|c| c.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
+        .filter(|c| c.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|c| c.amount_sol)
         .sum();
     let total_mev_sol = mev_transfer_sol + mev_claims_sol;
@@ -677,7 +668,7 @@ pub fn print_summary(
     let total_mev_usd: f64 = categorized
         .mev_deposits
         .iter()
-        .filter(|t| t.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
+        .filter(|t| t.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|t| {
             let price = get_price(prices, t.date.as_deref().unwrap_or("2025-12-15"));
             t.amount_sol * price
@@ -685,7 +676,7 @@ pub fn print_summary(
         .sum::<f64>()
         + mev_claims
             .iter()
-            .filter(|c| c.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
+            .filter(|c| c.date.as_deref().map(&matches_year).unwrap_or(false))
             .map(|c| {
                 let price = get_price(prices, c.date.as_deref().unwrap_or("2025-12-15"));
                 c.amount_sol * price
@@ -695,45 +686,31 @@ pub fn print_summary(
     // Leader fees from block production
     let total_leader_fees_sol: f64 = leader_fees
         .iter()
-        .filter(|f| f.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
+        .filter(|f| f.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|f| f.total_fees_sol)
         .sum();
     let total_leader_fees_usd: f64 = leader_fees
         .iter()
-        .filter(|f| f.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
+        .filter(|f| f.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|f| {
             let price = get_price(prices, f.date.as_deref().unwrap_or("2025-12-15"));
             f.total_fees_sol * price
         })
         .sum();
 
-    let total_sfdp_sol: f64 = categorized
-        .sfdp_reimbursements
-        .iter()
-        .filter(|t| t.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
-        .map(|t| t.amount_sol)
-        .sum();
-    let total_sfdp_usd: f64 = categorized
-        .sfdp_reimbursements
-        .iter()
-        .filter(|t| t.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
-        .map(|t| {
-            let price = get_price(prices, t.date.as_deref().unwrap_or("2025-12-15"));
-            t.amount_sol * price
-        })
-        .sum();
+    // Note: SFDP is tracked as expense offset, not calculated separately for revenue
 
     let total_seeding_sol: f64 = categorized
         .seeding
         .iter()
-        .filter(|t| t.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
+        .filter(|t| t.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|t| t.amount_sol)
         .sum();
 
     // Vote costs (with SFDP coverage)
     let total_vote_costs_sol: f64 = vote_costs
         .iter()
-        .filter(|c| c.date.as_deref().map(|d| matches_year(d)).unwrap_or(false))
+        .filter(|c| c.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|c| c.total_fee_sol)
         .sum();
     let mut total_vote_costs_gross_usd = 0.0;
@@ -774,8 +751,8 @@ pub fn print_summary(
         .map(|e| e.amount_usd)
         .sum();
 
-    let total_revenue_usd =
-        total_commission_usd + total_leader_fees_usd + total_mev_usd + total_sfdp_usd;
+    // SFDP is an expense offset, not revenue
+    let total_revenue_usd = total_commission_usd + total_leader_fees_usd + total_mev_usd;
     let total_expenses_usd = total_vote_costs_net_usd + total_other_expenses;
     let net_profit = total_revenue_usd - total_expenses_usd;
 
@@ -792,14 +769,10 @@ pub fn print_summary(
         "  Jito MEV:           {:>10.4} SOL  ${:>10.2}",
         total_mev_sol, total_mev_usd
     );
-    println!(
-        "  SFDP Reimbursement: {:>10.4} SOL  ${:>10.2}",
-        total_sfdp_sol, total_sfdp_usd
-    );
     println!("  ─────────────────────────────────────────────");
     println!(
         "  Total Revenue:      {:>10.4} SOL  ${:>10.2}",
-        total_commission_sol + total_leader_fees_sol + total_mev_sol + total_sfdp_sol,
+        total_commission_sol + total_leader_fees_sol + total_mev_sol,
         total_revenue_usd
     );
 
@@ -809,7 +782,7 @@ pub fn print_summary(
         total_vote_costs_sol, total_vote_costs_gross_usd
     );
     println!(
-        "  SFDP Coverage:                  ${:>10.2}",
+        "  SFDP Offset:                   -${:>10.2}",
         total_vote_costs_gross_usd - total_vote_costs_net_usd
     );
     println!(

@@ -52,11 +52,12 @@ pub struct HistoricalVoteCosts {
 
 /// Per-epoch vote cost info from Dune export
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // Fields from JSON may not all be used
 pub struct EpochVoteCostInfo {
     pub vote_count: u64,
     pub total_fee_sol: f64,
     #[serde(default)]
-    pub note: Option<String>,
+    note: Option<String>,
 }
 
 /// Load historical vote cost data from a JSON file
@@ -64,8 +65,7 @@ pub fn load_historical_vote_costs(path: &Path) -> Result<HistoricalVoteCosts> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
 
-    serde_json::from_str(&content)
-        .with_context(|| "Failed to parse historical vote costs JSON")
+    serde_json::from_str(&content).with_context(|| "Failed to parse historical vote costs JSON")
 }
 
 /// Import historical vote costs from Dune Analytics JSON export
@@ -75,7 +75,9 @@ pub fn import_historical_vote_costs(json_path: &Path) -> Result<Vec<EpochVoteCos
     let mut results = Vec::new();
 
     // Process epochs in order
-    let mut epochs: Vec<_> = historical.vote_costs_by_epoch.keys()
+    let mut epochs: Vec<_> = historical
+        .vote_costs_by_epoch
+        .keys()
         .filter_map(|s| s.parse::<u64>().ok())
         .collect();
     epochs.sort();
@@ -124,9 +126,7 @@ pub fn estimate_vote_cost(epoch: u64) -> EpochVoteCost {
 
 /// Estimate vote costs for a range of epochs
 pub fn estimate_vote_costs(start_epoch: u64, end_epoch: u64) -> Vec<EpochVoteCost> {
-    (start_epoch..=end_epoch)
-        .map(estimate_vote_cost)
-        .collect()
+    (start_epoch..=end_epoch).map(estimate_vote_cost).collect()
 }
 
 // =============================================================================
@@ -138,11 +138,6 @@ pub fn total_vote_costs_sol(costs: &[EpochVoteCost]) -> f64 {
     costs.iter().map(|c| c.total_fee_sol).sum()
 }
 
-/// Get total vote count
-pub fn total_vote_count(costs: &[EpochVoteCost]) -> u64 {
-    costs.iter().map(|c| c.vote_count).sum()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,7 +147,10 @@ mod tests {
         let cost = estimate_vote_cost(900);
         assert_eq!(cost.epoch, 900);
         assert_eq!(cost.vote_count, TYPICAL_VOTES_PER_EPOCH);
-        assert_eq!(cost.total_fee_lamports, TYPICAL_VOTES_PER_EPOCH * LAMPORTS_PER_VOTE);
+        assert_eq!(
+            cost.total_fee_lamports,
+            TYPICAL_VOTES_PER_EPOCH * LAMPORTS_PER_VOTE
+        );
         assert!((cost.total_fee_sol - TYPICAL_COST_PER_EPOCH_SOL).abs() < 0.01);
         assert_eq!(cost.source, "estimated");
     }

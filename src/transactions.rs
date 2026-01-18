@@ -155,8 +155,8 @@ pub async fn fetch_sol_transfers(config: &Config, verbose: bool) -> Result<Vec<S
     let mut all_transfers = Vec::new();
 
     // SFDP reimbursement address (Solana Foundation vote cost reimbursements)
-    let sfdp_address = Pubkey::from_str(constants::SFDP_REIMBURSEMENT)
-        .expect("Invalid SFDP address");
+    let sfdp_address =
+        Pubkey::from_str(constants::SFDP_REIMBURSEMENT).expect("Invalid SFDP address");
 
     // Fetch for withdraw authority, personal wallet, and SFDP address
     // Skip identity (dominated by vote txs) and vote account
@@ -403,7 +403,10 @@ pub async fn fetch_transfers_for_account(
     }
 
     if stopped_at_cached {
-        println!("      Found {} new signatures (stopped at cached data)", signatures.len());
+        println!(
+            "      Found {} new signatures (stopped at cached data)",
+            signatures.len()
+        );
     } else {
         println!("      Found {} signatures", signatures.len());
     }
@@ -451,7 +454,11 @@ pub async fn fetch_transfers_for_account(
                     }
                     Err(e) => {
                         if retry == 2 {
-                            eprintln!("      Failed to fetch tx {}: {}", &sig_info.signature[..16], e);
+                            eprintln!(
+                                "      Failed to fetch tx {}: {}",
+                                &sig_info.signature[..16],
+                                e
+                            );
                         }
                         thread::sleep(Duration::from_secs(1));
                     }
@@ -489,8 +496,8 @@ pub async fn fetch_transfers_for_account(
 /// (they're all vote transactions). Transfers involving them will be captured when
 /// we query the other accounts' histories.
 pub fn get_tracked_accounts(config: &Config) -> Vec<(&'static str, Pubkey)> {
-    let sfdp_address = Pubkey::from_str(constants::SFDP_REIMBURSEMENT)
-        .expect("Invalid SFDP address");
+    let sfdp_address =
+        Pubkey::from_str(constants::SFDP_REIMBURSEMENT).expect("Invalid SFDP address");
 
     vec![
         ("withdraw_authority", config.withdraw_authority),
@@ -666,7 +673,8 @@ pub fn categorize_transfers(transfers: &[SolTransfer], config: &Config) -> Categ
 /// Calibrated: epoch 896 = 2025-12-16
 pub fn epoch_to_date(epoch: u64) -> String {
     let epoch_diff = epoch as i64 - constants::REFERENCE_EPOCH;
-    let timestamp = constants::REFERENCE_EPOCH_TIMESTAMP + (epoch_diff * constants::EPOCH_DURATION_SECONDS);
+    let timestamp =
+        constants::REFERENCE_EPOCH_TIMESTAMP + (epoch_diff * constants::EPOCH_DURATION_SECONDS);
 
     DateTime::from_timestamp(timestamp, 0)
         .map(|dt| dt.format("%Y-%m-%d").to_string())

@@ -95,7 +95,6 @@ struct SolTransferRow {
     to_label: String,
     from_category: String,
     to_category: String,
-    account_key: String,
 }
 
 impl Cache {
@@ -311,13 +310,12 @@ impl Cache {
         start_epoch: u64,
         end_epoch: u64,
     ) -> Result<Vec<u64>> {
-        let rows: Vec<(i64,)> = sqlx::query_as(
-            "SELECT epoch FROM epoch_rewards WHERE epoch >= ? AND epoch <= ?",
-        )
-        .bind(start_epoch as i64)
-        .bind(end_epoch as i64)
-        .fetch_all(&self.pool)
-        .await?;
+        let rows: Vec<(i64,)> =
+            sqlx::query_as("SELECT epoch FROM epoch_rewards WHERE epoch >= ? AND epoch <= ?")
+                .bind(start_epoch as i64)
+                .bind(end_epoch as i64)
+                .fetch_all(&self.pool)
+                .await?;
 
         let cached: Vec<u64> = rows.into_iter().map(|(e,)| e as u64).collect();
 
@@ -434,11 +432,7 @@ impl Cache {
     // =========================================================================
 
     /// Get cached MEV claims
-    pub async fn get_mev_claims(
-        &self,
-        start_epoch: u64,
-        end_epoch: u64,
-    ) -> Result<Vec<MevClaim>> {
+    pub async fn get_mev_claims(&self, start_epoch: u64, end_epoch: u64) -> Result<Vec<MevClaim>> {
         let rows: Vec<MevClaimRow> = sqlx::query_as(
             "SELECT epoch, total_tips_lamports, commission_lamports, amount_sol, date
              FROM mev_claims
@@ -538,28 +532,6 @@ impl Cache {
             .collect())
     }
 
-    /// Get epochs missing vote cost data
-    pub async fn get_missing_vote_cost_epochs(
-        &self,
-        start_epoch: u64,
-        end_epoch: u64,
-    ) -> Result<Vec<u64>> {
-        let rows: Vec<(i64,)> =
-            sqlx::query_as("SELECT epoch FROM vote_costs WHERE epoch >= ? AND epoch <= ?")
-                .bind(start_epoch as i64)
-                .bind(end_epoch as i64)
-                .fetch_all(&self.pool)
-                .await?;
-
-        let cached: Vec<u64> = rows.into_iter().map(|(e,)| e as u64).collect();
-
-        let missing: Vec<u64> = (start_epoch..=end_epoch)
-            .filter(|e| !cached.contains(e))
-            .collect();
-
-        Ok(missing)
-    }
-
     /// Store vote costs
     pub async fn store_vote_costs(&self, costs: &[EpochVoteCost]) -> Result<()> {
         for cost in costs {
@@ -587,10 +559,9 @@ impl Cache {
 
     /// Get cached prices
     pub async fn get_prices(&self) -> Result<PriceCache> {
-        let rows: Vec<(String, f64)> =
-            sqlx::query_as("SELECT date, usd_price FROM prices")
-                .fetch_all(&self.pool)
-                .await?;
+        let rows: Vec<(String, f64)> = sqlx::query_as("SELECT date, usd_price FROM prices")
+            .fetch_all(&self.pool)
+            .await?;
 
         Ok(rows.into_iter().collect())
     }
@@ -615,11 +586,10 @@ impl Cache {
     /// Get metadata value
     #[allow(dead_code)]
     pub async fn get_metadata(&self, key: &str) -> Result<Option<String>> {
-        let row: Option<(String,)> =
-            sqlx::query_as("SELECT value FROM metadata WHERE key = ?")
-                .bind(key)
-                .fetch_optional(&self.pool)
-                .await?;
+        let row: Option<(String,)> = sqlx::query_as("SELECT value FROM metadata WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
 
         Ok(row.map(|(v,)| v))
     }
@@ -727,29 +697,12 @@ impl Cache {
     // SOL Transfers
     // =========================================================================
 
-    /// Get cached transfers for a specific account
-    pub async fn get_transfers(&self, account_key: &str) -> Result<Vec<SolTransfer>> {
-        let rows: Vec<SolTransferRow> = sqlx::query_as(
-            "SELECT signature, slot, timestamp, date, from_address, to_address,
-                    amount_lamports, amount_sol, from_label, to_label,
-                    from_category, to_category, account_key
-             FROM sol_transfers
-             WHERE account_key = ?
-             ORDER BY slot DESC",
-        )
-        .bind(account_key)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows.into_iter().filter_map(|r| row_to_transfer(r)).collect())
-    }
-
     /// Get all cached transfers
     pub async fn get_all_transfers(&self) -> Result<Vec<SolTransfer>> {
         let rows: Vec<SolTransferRow> = sqlx::query_as(
             "SELECT DISTINCT signature, slot, timestamp, date, from_address, to_address,
                     amount_lamports, amount_sol, from_label, to_label,
-                    from_category, to_category, account_key
+                    from_category, to_category
              FROM sol_transfers
              ORDER BY slot DESC",
         )
@@ -773,18 +726,21 @@ impl Cache {
 
     /// Get the most recent slot for an account's cached transfers
     pub async fn get_latest_transfer_slot(&self, account_key: &str) -> Result<Option<u64>> {
-        let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT MAX(slot) FROM sol_transfers WHERE account_key = ?",
-        )
-        .bind(account_key)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT MAX(slot) FROM sol_transfers WHERE account_key = ?")
+                .bind(account_key)
+                .fetch_optional(&self.pool)
+                .await?;
 
         Ok(row.and_then(|(slot,)| if slot > 0 { Some(slot as u64) } else { None }))
     }
 
     /// Store transfers for a specific account
-    pub async fn store_transfers(&self, transfers: &[SolTransfer], account_key: &str) -> Result<()> {
+    pub async fn store_transfers(
+        &self,
+        transfers: &[SolTransfer],
+        account_key: &str,
+    ) -> Result<()> {
         for transfer in transfers {
             sqlx::query(
                 "INSERT OR REPLACE INTO sol_transfers
@@ -813,47 +769,30 @@ impl Cache {
         Ok(())
     }
 
-    /// Get count of cached transfers
-    pub async fn transfer_count(&self) -> Result<u64> {
-        let row: (i64,) = sqlx::query_as(
-            "SELECT COUNT(DISTINCT signature) FROM sol_transfers",
-        )
-        .fetch_one(&self.pool)
-        .await?;
-
-        Ok(row.0 as u64)
-    }
-
     // =========================================================================
     // Utilities
     // =========================================================================
 
     /// Get cache statistics
     pub async fn stats(&self) -> Result<CacheStats> {
-        let epoch_rewards: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM epoch_rewards")
-                .fetch_one(&self.pool)
-                .await?;
-        let leader_fees: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM leader_fees")
-                .fetch_one(&self.pool)
-                .await?;
-        let mev_claims: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM mev_claims")
-                .fetch_one(&self.pool)
-                .await?;
-        let vote_costs: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM vote_costs")
-                .fetch_one(&self.pool)
-                .await?;
-        let prices: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM prices")
-                .fetch_one(&self.pool)
-                .await?;
-        let expenses: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM expenses")
-                .fetch_one(&self.pool)
-                .await?;
+        let epoch_rewards: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM epoch_rewards")
+            .fetch_one(&self.pool)
+            .await?;
+        let leader_fees: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM leader_fees")
+            .fetch_one(&self.pool)
+            .await?;
+        let mev_claims: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM mev_claims")
+            .fetch_one(&self.pool)
+            .await?;
+        let vote_costs: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM vote_costs")
+            .fetch_one(&self.pool)
+            .await?;
+        let prices: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM prices")
+            .fetch_one(&self.pool)
+            .await?;
+        let expenses: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM expenses")
+            .fetch_one(&self.pool)
+            .await?;
         let transfers: (i64,) =
             sqlx::query_as("SELECT COUNT(DISTINCT signature) FROM sol_transfers")
                 .fetch_one(&self.pool)

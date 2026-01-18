@@ -240,7 +240,10 @@ async fn handle_command(command: Command, cache: &Cache) -> Result<()> {
 async fn handle_leader_slots_command(action: LeaderSlotsCommand, cache: &Cache) -> Result<()> {
     match action {
         LeaderSlotsCommand::Import { file, rpc_url } => {
-            println!("Importing historical leader slot data from {}...\n", file.display());
+            println!(
+                "Importing historical leader slot data from {}...\n",
+                file.display()
+            );
 
             // Load config file and initialize runtime configuration
             let file_config = load_config_file()?;
@@ -292,10 +295,14 @@ async fn handle_leader_slots_command(action: LeaderSlotsCommand, cache: &Cache) 
 
             if fees.is_empty() {
                 println!("No leader fee data cached.");
-                println!("\nUse 'validator-finances leader-slots import <file.json>' to import data");
+                println!(
+                    "\nUse 'validator-finances leader-slots import <file.json>' to import data"
+                );
             } else {
-                println!("{:<8} {:<12} {:>10} {:>10} {:>10} {:>14}",
-                    "Epoch", "Date", "Slots", "Blocks", "Skipped", "Fees (SOL)");
+                println!(
+                    "{:<8} {:<12} {:>10} {:>10} {:>10} {:>14}",
+                    "Epoch", "Date", "Slots", "Blocks", "Skipped", "Fees (SOL)"
+                );
                 println!("{}", "-".repeat(70));
 
                 let mut total_slots = 0u64;
@@ -318,8 +325,10 @@ async fn handle_leader_slots_command(action: LeaderSlotsCommand, cache: &Cache) 
                 }
 
                 println!("{}", "-".repeat(70));
-                println!("{:<8} {:>12} {:>10} {:>10} {:>10} {:>14.6}",
-                    "Total", "", total_slots, total_blocks, "", total_fees);
+                println!(
+                    "{:<8} {:>12} {:>10} {:>10} {:>10} {:>14.6}",
+                    "Total", "", total_slots, total_blocks, "", total_fees
+                );
                 println!("\n{} epoch(s) cached", fees.len());
             }
             Ok(())
@@ -344,15 +353,18 @@ async fn handle_vote_costs_command(action: VoteCostsCommand, cache: &Cache) -> R
             cache.store_vote_costs(&costs).await?;
 
             println!("Imported {} epochs:\n", costs.len());
-            println!("{:<8} {:<12} {:>12} {:>14} {:>10}",
-                "Epoch", "Date", "Votes", "Cost (SOL)", "Source");
+            println!(
+                "{:<8} {:<12} {:>12} {:>14} {:>10}",
+                "Epoch", "Date", "Votes", "Cost (SOL)", "Source"
+            );
             println!("{}", "-".repeat(60));
 
             let mut total_votes = 0u64;
             let mut total_cost = 0.0f64;
 
             for cost in &costs {
-                println!("{:<8} {:<12} {:>12} {:>14.6} {:>10}",
+                println!(
+                    "{:<8} {:<12} {:>12} {:>14.6} {:>10}",
                     cost.epoch,
                     cost.date.as_deref().unwrap_or("-"),
                     cost.vote_count,
@@ -364,8 +376,10 @@ async fn handle_vote_costs_command(action: VoteCostsCommand, cache: &Cache) -> R
             }
 
             println!("{}", "-".repeat(60));
-            println!("{:<8} {:>12} {:>12} {:>14.6}",
-                "Total", "", total_votes, total_cost);
+            println!(
+                "{:<8} {:>12} {:>12} {:>14.6}",
+                "Total", "", total_votes, total_cost
+            );
 
             println!("\nData cached to database.");
             Ok(())
@@ -377,17 +391,22 @@ async fn handle_vote_costs_command(action: VoteCostsCommand, cache: &Cache) -> R
             if costs.is_empty() {
                 println!("No vote cost data cached.");
                 println!("\nUse 'validator-finances vote-costs import <file.json>' to import data");
-                println!("Or 'validator-finances vote-costs estimate --start N --end M' to estimate");
+                println!(
+                    "Or 'validator-finances vote-costs estimate --start N --end M' to estimate"
+                );
             } else {
-                println!("{:<8} {:<12} {:>12} {:>14} {:>10}",
-                    "Epoch", "Date", "Votes", "Cost (SOL)", "Source");
+                println!(
+                    "{:<8} {:<12} {:>12} {:>14} {:>10}",
+                    "Epoch", "Date", "Votes", "Cost (SOL)", "Source"
+                );
                 println!("{}", "-".repeat(60));
 
                 let mut total_votes = 0u64;
                 let mut total_cost = 0.0f64;
 
                 for cost in &costs {
-                    println!("{:<8} {:<12} {:>12} {:>14.6} {:>10}",
+                    println!(
+                        "{:<8} {:<12} {:>12} {:>14.6} {:>10}",
                         cost.epoch,
                         cost.date.as_deref().unwrap_or("-"),
                         cost.vote_count,
@@ -399,8 +418,10 @@ async fn handle_vote_costs_command(action: VoteCostsCommand, cache: &Cache) -> R
                 }
 
                 println!("{}", "-".repeat(60));
-                println!("{:<8} {:>12} {:>12} {:>14.6}",
-                    "Total", "", total_votes, total_cost);
+                println!(
+                    "{:<8} {:>12} {:>12} {:>14.6}",
+                    "Total", "", total_votes, total_cost
+                );
                 println!("\n{} epoch(s) cached", costs.len());
             }
             Ok(())
@@ -414,10 +435,15 @@ async fn handle_vote_costs_command(action: VoteCostsCommand, cache: &Cache) -> R
             // Store in cache
             cache.store_vote_costs(&estimates).await?;
 
-            println!("Estimated {} epochs at ~{:.3} SOL each:",
-                estimates.len(), vote_costs::TYPICAL_COST_PER_EPOCH_SOL);
-            println!("Total estimated cost: {:.6} SOL\n",
-                vote_costs::total_vote_costs_sol(&estimates));
+            println!(
+                "Estimated {} epochs at ~{:.3} SOL each:",
+                estimates.len(),
+                vote_costs::TYPICAL_COST_PER_EPOCH_SOL
+            );
+            println!(
+                "Total estimated cost: {:.6} SOL\n",
+                vote_costs::total_vote_costs_sol(&estimates)
+            );
 
             println!("Data cached to database.");
             Ok(())
@@ -435,14 +461,17 @@ async fn handle_expense_command(action: ExpenseCommand, cache: &Cache) -> Result
                 println!("\nUse 'validator-finances expense add' to add expenses");
                 println!("Or 'validator-finances expense import <file.csv>' to import from CSV");
             } else {
-                println!("{:<4} {:<12} {:<15} {:<12} {:>10}  {}",
-                    "ID", "Date", "Vendor", "Category", "Amount", "Description");
+                println!(
+                    "{:<4} {:<12} {:<15} {:<12} {:>10}  Description",
+                    "ID", "Date", "Vendor", "Category", "Amount"
+                );
                 println!("{}", "-".repeat(80));
 
                 let mut total = 0.0;
                 for expense in &expenses {
                     let id = expense.id.map(|i| i.to_string()).unwrap_or_default();
-                    println!("{:<4} {:<12} {:<15} {:<12} ${:>9.2}  {}",
+                    println!(
+                        "{:<4} {:<12} {:<15} {:<12} ${:>9.2}  {}",
                         id,
                         expense.date,
                         truncate(&expense.vendor, 14),
@@ -482,7 +511,10 @@ async fn handle_expense_command(action: ExpenseCommand, cache: &Cache) -> Result
             };
 
             let id = cache.add_expense(&expense).await?;
-            println!("Added expense #{}: {} - ${:.2}", id, expense.vendor, expense.amount_usd);
+            println!(
+                "Added expense #{}: {} - ${:.2}",
+                id, expense.vendor, expense.amount_usd
+            );
             Ok(())
         }
 
@@ -565,12 +597,14 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
 
     // Step 1: Fetch inflation rewards by epoch (with caching)
     println!("Fetching inflation rewards...");
-    let rewards = fetch_rewards_with_cache(&cache, &config, start_epoch, end_epoch, args.no_cache).await?;
+    let rewards =
+        fetch_rewards_with_cache(&cache, &config, start_epoch, end_epoch, args.no_cache).await?;
     println!("  Found {} epochs with rewards\n", rewards.len());
 
     // Step 2: Fetch all SOL transfers to/from our accounts (with caching)
     println!("Loading transaction history...");
-    let transfers = fetch_transfers_with_cache(&cache, &config, args.no_cache, args.verbose).await?;
+    let transfers =
+        fetch_transfers_with_cache(&cache, &config, args.no_cache, args.verbose).await?;
     println!("  Found {} SOL transfers\n", transfers.len());
 
     // Step 3: Categorize transfers
@@ -595,13 +629,19 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
 
     // Step 4: Fetch Jito MEV claims (with caching)
     println!("Fetching Jito MEV claims...");
-    let mev_claims =
-        fetch_mev_with_cache(&cache, &config, start_epoch, end_epoch, current_epoch, args.no_cache)
-            .await
-            .unwrap_or_else(|e| {
-                eprintln!("  Warning: Failed to fetch MEV claims: {}", e);
-                Vec::new()
-            });
+    let mev_claims = fetch_mev_with_cache(
+        &cache,
+        &config,
+        start_epoch,
+        end_epoch,
+        current_epoch,
+        args.no_cache,
+    )
+    .await
+    .unwrap_or_else(|e| {
+        eprintln!("  Warning: Failed to fetch MEV claims: {}", e);
+        Vec::new()
+    });
     let total_mev = jito::total_mev_sol(&mev_claims);
     println!(
         "  Found {} MEV claims totaling {:.6} SOL\n",
@@ -611,13 +651,19 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
 
     // Step 5: Fetch leader slot fees (with caching - this is the slow one!)
     println!("Fetching leader slot fees...");
-    let leader_fees =
-        fetch_leader_fees_with_cache(&cache, &config, start_epoch, end_epoch, current_epoch, args.no_cache)
-            .await
-            .unwrap_or_else(|e| {
-                eprintln!("  Warning: Failed to fetch leader fees: {}", e);
-                Vec::new()
-            });
+    let leader_fees = fetch_leader_fees_with_cache(
+        &cache,
+        &config,
+        start_epoch,
+        end_epoch,
+        current_epoch,
+        args.no_cache,
+    )
+    .await
+    .unwrap_or_else(|e| {
+        eprintln!("  Warning: Failed to fetch leader fees: {}", e);
+        Vec::new()
+    });
     let total_leader_fees = leader_fees::total_leader_fees_sol(&leader_fees);
     println!(
         "  Found {} epochs with leader fees totaling {:.6} SOL\n",
@@ -629,7 +675,9 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
     println!("Loading vote costs...");
     let vote_costs = cache.get_vote_costs(start_epoch, end_epoch).await?;
     if vote_costs.is_empty() {
-        println!("  No vote costs cached (use 'vote-costs import' or 'vote-costs estimate' to add)\n");
+        println!(
+            "  No vote costs cached (use 'vote-costs import' or 'vote-costs estimate' to add)\n"
+        );
     } else {
         let total_vote_cost = vote_costs::total_vote_costs_sol(&vote_costs);
         println!(
@@ -693,8 +741,14 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
 
     // Step 8: Fetch historical prices (with caching)
     println!("Fetching historical SOL prices...");
-    let price_cache =
-        fetch_prices_with_cache(&cache, &rewards, &transfers, &config.coingecko_api_key, args.no_cache).await?;
+    let price_cache = fetch_prices_with_cache(
+        &cache,
+        &rewards,
+        &transfers,
+        &config.coingecko_api_key,
+        args.no_cache,
+    )
+    .await?;
     println!("  Cached {} daily prices\n", price_cache.len());
 
     // Step 9: Generate reports
@@ -744,7 +798,8 @@ async fn fetch_rewards_with_cache(
 ) -> Result<Vec<transactions::EpochReward>> {
     if no_cache {
         // Fetch everything fresh
-        let rewards = transactions::fetch_inflation_rewards(config, start_epoch, Some(end_epoch)).await?;
+        let rewards =
+            transactions::fetch_inflation_rewards(config, start_epoch, Some(end_epoch)).await?;
         cache.store_epoch_rewards(&rewards).await?;
         return Ok(rewards);
     }
@@ -754,7 +809,9 @@ async fn fetch_rewards_with_cache(
     let cached_count = rewards.len();
 
     // Find missing epochs
-    let missing = cache.get_missing_reward_epochs(start_epoch, end_epoch).await?;
+    let missing = cache
+        .get_missing_reward_epochs(start_epoch, end_epoch)
+        .await?;
 
     if !missing.is_empty() {
         println!("    Fetching {} missing epochs...", missing.len());
@@ -802,7 +859,9 @@ async fn fetch_mev_with_cache(
     let cached_count = claims.len();
 
     // Check if we need to fetch fresh data
-    let missing = cache.get_missing_mev_epochs(start_epoch, completed_end).await?;
+    let missing = cache
+        .get_missing_mev_epochs(start_epoch, completed_end)
+        .await?;
     let need_current = end_epoch >= current_epoch;
 
     if !missing.is_empty() || need_current || cached_count == 0 {
@@ -844,7 +903,11 @@ async fn fetch_leader_fees_with_cache(
     if no_cache {
         let fees = leader_fees::fetch_leader_fees(config, start_epoch, Some(end_epoch)).await?;
         // Only cache completed epochs
-        let completed: Vec<_> = fees.iter().filter(|f| f.epoch < current_epoch).cloned().collect();
+        let completed: Vec<_> = fees
+            .iter()
+            .filter(|f| f.epoch < current_epoch)
+            .cloned()
+            .collect();
         cache.store_leader_fees(&completed).await?;
         return Ok(fees);
     }
@@ -856,7 +919,8 @@ async fn fetch_leader_fees_with_cache(
 
     // Find missing completed epochs
     let missing: Vec<u64> = cache
-        .get_missing_leader_fee_epochs(start_epoch, completed_end).await?
+        .get_missing_leader_fee_epochs(start_epoch, completed_end)
+        .await?
         .into_iter()
         .collect();
 
@@ -864,15 +928,21 @@ async fn fetch_leader_fees_with_cache(
     let need_current = end_epoch >= current_epoch;
 
     if !missing.is_empty() {
-        println!("    Fetching {} missing epochs (this may take a while)...", missing.len());
+        println!(
+            "    Fetching {} missing epochs (this may take a while)...",
+            missing.len()
+        );
 
         // Fetch missing epochs
         for epoch in &missing {
-            if let Ok(fetched) =
-                leader_fees::fetch_leader_fees(config, *epoch, Some(*epoch)).await
+            if let Ok(fetched) = leader_fees::fetch_leader_fees(config, *epoch, Some(*epoch)).await
             {
                 // Store completed epochs in cache
-                let completed: Vec<_> = fetched.iter().filter(|f| f.epoch < current_epoch).cloned().collect();
+                let completed: Vec<_> = fetched
+                    .iter()
+                    .filter(|f| f.epoch < current_epoch)
+                    .cloned()
+                    .collect();
                 cache.store_leader_fees(&completed).await?;
                 fees.extend(fetched);
             }
@@ -989,11 +1059,16 @@ async fn fetch_transfers_with_cache(
             label,
             latest_slot,
             verbose,
-        ).await?;
+        )
+        .await?;
 
         if !new_transfers.is_empty() {
             if verbose {
-                println!("    {}: fetched {} new transfers", label, new_transfers.len());
+                println!(
+                    "    {}: fetched {} new transfers",
+                    label,
+                    new_transfers.len()
+                );
             }
 
             // Store new transfers (all of them, for tracking per-account progress)
