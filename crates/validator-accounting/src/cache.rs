@@ -9,7 +9,7 @@ use sqlx::{FromRow, SqlitePool};
 use std::path::Path;
 
 use crate::addresses::AddressCategory;
-use crate::expenses::{Expense, ExpenseCategory};
+use crate::expenses::{Expense, ExpenseCategory, RecurringExpense};
 use crate::jito::MevClaim;
 use crate::leader_fees::EpochLeaderFees;
 use crate::prices::PriceCache;
@@ -78,6 +78,19 @@ struct ExpenseRow {
     amount_usd: f64,
     paid_with: String,
     invoice_id: Option<String>,
+}
+
+/// Row type for recurring expenses query
+#[derive(FromRow)]
+struct RecurringExpenseRow {
+    id: i64,
+    vendor: String,
+    category: String,
+    description: String,
+    amount_usd: f64,
+    paid_with: String,
+    start_date: String,
+    end_date: Option<String>,
 }
 
 /// Row type for sol_transfers query
@@ -233,6 +246,25 @@ impl Cache {
                 amount_usd REAL NOT NULL,
                 paid_with TEXT NOT NULL,
                 invoice_id TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            ",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "
+            -- Recurring expenses (templates that expand into monthly entries)
+            CREATE TABLE IF NOT EXISTS recurring_expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vendor TEXT NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT NOT NULL,
+                amount_usd REAL NOT NULL,
+                paid_with TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )
             ",
@@ -697,6 +729,84 @@ impl Cache {
     }
 
     // =========================================================================
+    // Recurring Expenses
+    // =========================================================================
+
+    /// Get all recurring expenses
+    pub async fn get_recurring_expenses(&self) -> Result<Vec<RecurringExpense>> {
+        let rows: Vec<RecurringExpenseRow> = sqlx::query_as(
+            "SELECT id, vendor, category, description, amount_usd, paid_with, start_date, end_date
+             FROM recurring_expenses
+             ORDER BY vendor, start_date",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let category = match r.category.as_str() {
+                    "Hosting" => ExpenseCategory::Hosting,
+                    "Contractor" => ExpenseCategory::Contractor,
+                    "Hardware" => ExpenseCategory::Hardware,
+                    "Software" => ExpenseCategory::Software,
+                    "VoteFees" => ExpenseCategory::VoteFees,
+                    _ => ExpenseCategory::Other,
+                };
+
+                RecurringExpense {
+                    id: Some(r.id),
+                    vendor: r.vendor,
+                    category,
+                    description: r.description,
+                    amount_usd: r.amount_usd,
+                    paid_with: r.paid_with,
+                    start_date: r.start_date,
+                    end_date: r.end_date,
+                }
+            })
+            .collect())
+    }
+
+    /// Add a new recurring expense, returns the ID
+    pub async fn add_recurring_expense(&self, expense: &RecurringExpense) -> Result<i64> {
+        let category_str = match expense.category {
+            ExpenseCategory::Hosting => "Hosting",
+            ExpenseCategory::Contractor => "Contractor",
+            ExpenseCategory::Hardware => "Hardware",
+            ExpenseCategory::Software => "Software",
+            ExpenseCategory::VoteFees => "VoteFees",
+            ExpenseCategory::Other => "Other",
+        };
+
+        let result = sqlx::query(
+            "INSERT INTO recurring_expenses (vendor, category, description, amount_usd, paid_with, start_date, end_date)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&expense.vendor)
+        .bind(category_str)
+        .bind(&expense.description)
+        .bind(expense.amount_usd)
+        .bind(&expense.paid_with)
+        .bind(&expense.start_date)
+        .bind(&expense.end_date)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.last_insert_rowid())
+    }
+
+    /// Delete a recurring expense by ID
+    pub async fn delete_recurring_expense(&self, id: i64) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM recurring_expenses WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    // =========================================================================
     // SOL Transfers
     // =========================================================================
 
@@ -824,6 +934,10 @@ impl Cache {
         let expenses: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM expenses")
             .fetch_one(&self.pool)
             .await?;
+        let recurring_expenses: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM recurring_expenses")
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or((0,));
         let transfers: (i64,) = sqlx::query_as("SELECT COUNT(DISTINCT signature) FROM sol_transfers")
             .fetch_one(&self.pool)
             .await
@@ -836,6 +950,7 @@ impl Cache {
             vote_costs: vote_costs.0 as u64,
             prices: prices.0 as u64,
             expenses: expenses.0 as u64,
+            recurring_expenses: recurring_expenses.0 as u64,
             transfers: transfers.0 as u64,
         })
     }
@@ -905,6 +1020,7 @@ pub struct CacheStats {
     pub vote_costs: u64,
     pub prices: u64,
     pub expenses: u64,
+    pub recurring_expenses: u64,
     pub transfers: u64,
 }
 
@@ -912,14 +1028,15 @@ impl std::fmt::Display for CacheStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} rewards, {} leader fees, {} MEV claims, {} vote costs, {} transfers, {} prices, {} expenses",
+            "{} rewards, {} leader fees, {} MEV claims, {} vote costs, {} transfers, {} prices, {} expenses, {} recurring",
             self.epoch_rewards,
             self.leader_fees,
             self.mev_claims,
             self.vote_costs,
             self.transfers,
             self.prices,
-            self.expenses
+            self.expenses,
+            self.recurring_expenses
         )
     }
 }

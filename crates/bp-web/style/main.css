@@ -1,0 +1,78 @@
+/* Manpage / Paper aesthetic */
+:root {
+  --paper: #f8f6f1;
+  --ink: #1a1a1a;
+  --ink-light: #666;
+  --link: #0066cc;
+  --rule: #ccc;
+}
+
+html, body {
+  background-color: var(--paper) !important;
+  font-family: monospace !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  color: var(--ink) !important;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+/* Links */
+a {
+  color: var(--link) !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* Selection */
+::selection {
+  background-color: var(--ink);
+  color: var(--paper);
+}
+
+/* Print styles */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  a {
+    color: black !important;
+  }
+}
+
+/* Section header animations */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes flow {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+.section-flow-line {
+  animation: flow 2s ease-in-out infinite;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

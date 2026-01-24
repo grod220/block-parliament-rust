@@ -25,7 +25,7 @@ use std::path::PathBuf;
 
 use cache::Cache;
 use config::FileConfig;
-use expenses::{Expense, ExpenseCategory};
+use expenses::{Expense, ExpenseCategory, RecurringExpense};
 
 /// Default config file name
 const CONFIG_FILE: &str = "config.toml";
@@ -130,6 +130,12 @@ enum Command {
     Expense {
         #[command(subcommand)]
         action: ExpenseCommand,
+    },
+
+    /// Manage recurring expenses (monthly hosting, subscriptions, etc.)
+    Recurring {
+        #[command(subcommand)]
+        action: RecurringCommand,
     },
 
     /// Import historical leader slot data
@@ -246,6 +252,49 @@ enum ExpenseCommand {
 }
 
 #[derive(Subcommand, Debug)]
+enum RecurringCommand {
+    /// List all recurring expenses
+    List,
+
+    /// Add a new recurring expense
+    Add {
+        /// Vendor name
+        #[arg(long)]
+        vendor: String,
+
+        /// Category: Hosting, Contractor, Hardware, Software, VoteFees, Other
+        #[arg(long)]
+        category: String,
+
+        /// Description
+        #[arg(long)]
+        description: String,
+
+        /// Monthly amount in USD
+        #[arg(long)]
+        amount: f64,
+
+        /// Payment method (e.g., "Credit Card", "USD", "SOL")
+        #[arg(long, default_value = "USD")]
+        paid_with: String,
+
+        /// Start date (YYYY-MM-DD) - day is used as billing day each month
+        #[arg(long)]
+        start_date: String,
+
+        /// End date (YYYY-MM-DD) - optional, omit for ongoing expenses
+        #[arg(long)]
+        end_date: Option<String>,
+    },
+
+    /// Delete a recurring expense by ID
+    Delete {
+        /// Recurring expense ID to delete
+        id: i64,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 enum DuneCommand {
     /// Import inflation rewards from Dune
     Rewards {
@@ -308,6 +357,7 @@ async fn main() -> Result<()> {
 async fn handle_command(command: Command, cache: &Cache, config_path: Option<&PathBuf>) -> Result<()> {
     match command {
         Command::Expense { action } => handle_expense_command(action, cache).await,
+        Command::Recurring { action } => handle_recurring_command(action, cache).await,
         Command::LeaderSlots { action } => handle_leader_slots_command(action, cache, config_path).await,
         Command::VoteCosts { action } => handle_vote_costs_command(action, cache).await,
         Command::Dune { action } => handle_dune_command(action, cache, config_path).await,
@@ -605,6 +655,86 @@ async fn handle_expense_command(action: ExpenseCommand, cache: &Cache) -> Result
             let expenses = cache.get_expenses().await?;
             expenses::export_to_csv(&expenses, &file)?;
             println!("Exported {} expenses to {}", expenses.len(), file.display());
+            Ok(())
+        }
+    }
+}
+
+/// Handle recurring expense subcommands
+async fn handle_recurring_command(action: RecurringCommand, cache: &Cache) -> Result<()> {
+    match action {
+        RecurringCommand::List => {
+            let recurring = cache.get_recurring_expenses().await?;
+            if recurring.is_empty() {
+                println!("No recurring expenses configured.");
+                println!("\nUse 'validator-accounting recurring add' to add recurring expenses");
+            } else {
+                println!(
+                    "{:<4} {:<15} {:<12} {:>10}  {:<12} {:<10} Description",
+                    "ID", "Vendor", "Category", "Amount", "Start", "End"
+                );
+                println!("{}", "-".repeat(90));
+
+                let mut total = 0.0;
+                for expense in &recurring {
+                    let id = expense.id.map(|i| i.to_string()).unwrap_or_default();
+                    let end = expense.end_date.as_deref().unwrap_or("ongoing");
+                    println!(
+                        "{:<4} {:<15} {:<12} ${:>9.2}  {:<12} {:<10} {}",
+                        id,
+                        truncate(&expense.vendor, 14),
+                        expense.category,
+                        expense.amount_usd,
+                        &expense.start_date[..7], // Just show YYYY-MM
+                        if end == "ongoing" {
+                            end.to_string()
+                        } else {
+                            end[..7].to_string()
+                        },
+                        truncate(&expense.description, 25),
+                    );
+                    total += expense.amount_usd;
+                }
+                println!("{}", "-".repeat(90));
+                println!("{:>43} ${:>9.2}/month", "Total:", total);
+                println!("\n{} recurring expense(s)", recurring.len());
+            }
+            Ok(())
+        }
+
+        RecurringCommand::Add {
+            vendor,
+            category,
+            description,
+            amount,
+            paid_with,
+            start_date,
+            end_date,
+        } => {
+            let category = parse_category(&category)?;
+
+            let expense = RecurringExpense {
+                id: None,
+                vendor: vendor.clone(),
+                category,
+                description,
+                amount_usd: amount,
+                paid_with,
+                start_date,
+                end_date,
+            };
+
+            let id = cache.add_recurring_expense(&expense).await?;
+            println!("Added recurring expense #{}: {} - ${:.2}/month", id, vendor, amount);
+            Ok(())
+        }
+
+        RecurringCommand::Delete { id } => {
+            if cache.delete_recurring_expense(id).await? {
+                println!("Deleted recurring expense #{}", id);
+            } else {
+                println!("Recurring expense #{} not found", id);
+            }
             Ok(())
         }
     }
@@ -1003,10 +1133,30 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
         }
     }
 
-    // Step 7: Load expenses (database + Notion contractor hours)
+    // Step 7: Load expenses (database + recurring + Notion contractor hours)
     println!("Loading expenses...");
     let mut all_expenses = cache.get_expenses().await?;
-    let db_expense_count = all_expenses.len();
+    let _db_expense_count = all_expenses.len();
+
+    // Expand recurring expenses into individual entries for the report period
+    let recurring = cache.get_recurring_expenses().await?;
+    if !recurring.is_empty() {
+        // Determine month range from rewards data
+        let first_date = rewards.iter().filter_map(|r| r.date.as_ref()).min();
+        let last_date = rewards.iter().filter_map(|r| r.date.as_ref()).max();
+
+        if let (Some(start), Some(end)) = (first_date, last_date) {
+            let start_month = &start[..7]; // YYYY-MM
+            let end_month = &end[..7];
+            let expanded = expenses::expand_recurring_expenses(&recurring, start_month, end_month);
+            println!(
+                "  Expanded {} recurring expenses into {} monthly entries",
+                recurring.len(),
+                expanded.len()
+            );
+            all_expenses.extend(expanded);
+        }
+    }
 
     // Fetch contractor hours from Notion if configured
     if let Some(notion_config) = &file_config.notion {
@@ -1037,22 +1187,11 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
     if all_expenses.is_empty() {
         println!("  No expenses recorded\n");
     } else {
-        let notion_count = all_expenses.len() - db_expense_count;
-        if notion_count > 0 {
-            println!(
-                "  Loaded {} expenses ({} from database, {} from Notion) totaling ${:.2}\n",
-                all_expenses.len(),
-                db_expense_count,
-                notion_count,
-                total_expense
-            );
-        } else {
-            println!(
-                "  Loaded {} expense entries totaling ${:.2}\n",
-                all_expenses.len(),
-                total_expense
-            );
-        }
+        println!(
+            "  Loaded {} expense entries totaling ${:.2}\n",
+            all_expenses.len(),
+            total_expense
+        );
     }
 
     // Step 8: Fetch historical prices (with caching)
