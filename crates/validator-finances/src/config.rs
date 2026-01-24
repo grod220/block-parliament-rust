@@ -218,7 +218,6 @@ mod tests {
             coingecko_api_key: String::new(),
             dune_api_key: None,
             commission_percent: 10,
-            jito_mev_commission_percent: 10,
             first_reward_epoch: 900,
             sfdp_acceptance_date: sfdp_date.map(|s| s.to_string()),
             bootstrap_date: "2025-11-01".to_string(),

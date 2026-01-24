@@ -1,0 +1,47 @@
+[package]
+name = "validator-finances"
+version.workspace = true
+edition.workspace = true
+description = "Financial tracking for Block Parliament Solana validator"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Solana
+solana-client.workspace = true
+solana-sdk.workspace = true
+solana-transaction-status.workspace = true
+solana-account-decoder.workspace = true
+
+# Async runtime
+tokio.workspace = true
+
+# HTTP client for price API
+reqwest.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Date/time handling
+chrono.workspace = true
+
+# CSV output
+csv.workspace = true
+
+# CLI arguments
+clap.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Config file parsing
+toml.workspace = true
+
+# Pretty printing
+tabled.workspace = true
+
+# SQLite with compile-time checked queries
+sqlx.workspace = true
