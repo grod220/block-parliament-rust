@@ -117,12 +117,8 @@ impl Cache {
 
         // Enable WAL mode for better concurrency and set busy timeout
         // This prevents SQLITE_BUSY errors when multiple processes access the DB
-        sqlx::query("PRAGMA journal_mode=WAL")
-            .execute(&pool)
-            .await?;
-        sqlx::query("PRAGMA busy_timeout=5000")
-            .execute(&pool)
-            .await?;
+        sqlx::query("PRAGMA journal_mode=WAL").execute(&pool).await?;
+        sqlx::query("PRAGMA busy_timeout=5000").execute(&pool).await?;
 
         let cache = Self { pool };
         cache.init_schema().await?;
@@ -270,11 +266,9 @@ impl Cache {
         .await?;
 
         // Index for quick lookups by account
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_transfers_account ON sol_transfers(account_key)",
-        )
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfers_account ON sol_transfers(account_key)")
+            .execute(&self.pool)
+            .await?;
 
         sqlx::query(
             "
@@ -297,11 +291,7 @@ impl Cache {
     // =========================================================================
 
     /// Get cached epoch rewards
-    pub async fn get_epoch_rewards(
-        &self,
-        start_epoch: u64,
-        end_epoch: u64,
-    ) -> Result<Vec<EpochReward>> {
+    pub async fn get_epoch_rewards(&self, start_epoch: u64, end_epoch: u64) -> Result<Vec<EpochReward>> {
         let rows: Vec<EpochRewardRow> = sqlx::query_as(
             "SELECT epoch, amount_lamports, amount_sol, commission, effective_slot, date
              FROM epoch_rewards
@@ -327,23 +317,16 @@ impl Cache {
     }
 
     /// Get epochs that are missing from cache
-    pub async fn get_missing_reward_epochs(
-        &self,
-        start_epoch: u64,
-        end_epoch: u64,
-    ) -> Result<Vec<u64>> {
-        let rows: Vec<(i64,)> =
-            sqlx::query_as("SELECT epoch FROM epoch_rewards WHERE epoch >= ? AND epoch <= ?")
-                .bind(start_epoch as i64)
-                .bind(end_epoch as i64)
-                .fetch_all(&self.pool)
-                .await?;
+    pub async fn get_missing_reward_epochs(&self, start_epoch: u64, end_epoch: u64) -> Result<Vec<u64>> {
+        let rows: Vec<(i64,)> = sqlx::query_as("SELECT epoch FROM epoch_rewards WHERE epoch >= ? AND epoch <= ?")
+            .bind(start_epoch as i64)
+            .bind(end_epoch as i64)
+            .fetch_all(&self.pool)
+            .await?;
 
         let cached: Vec<u64> = rows.into_iter().map(|(e,)| e as u64).collect();
 
-        let missing: Vec<u64> = (start_epoch..=end_epoch)
-            .filter(|e| !cached.contains(e))
-            .collect();
+        let missing: Vec<u64> = (start_epoch..=end_epoch).filter(|e| !cached.contains(e)).collect();
 
         Ok(missing)
     }
@@ -381,11 +364,7 @@ impl Cache {
     // =========================================================================
 
     /// Get cached leader fees
-    pub async fn get_leader_fees(
-        &self,
-        start_epoch: u64,
-        end_epoch: u64,
-    ) -> Result<Vec<EpochLeaderFees>> {
+    pub async fn get_leader_fees(&self, start_epoch: u64, end_epoch: u64) -> Result<Vec<EpochLeaderFees>> {
         let rows: Vec<LeaderFeesRow> = sqlx::query_as(
             "SELECT epoch, leader_slots, blocks_produced, skipped_slots,
                     total_fees_lamports, total_fees_sol, date
@@ -413,23 +392,16 @@ impl Cache {
     }
 
     /// Get epochs missing leader fee data
-    pub async fn get_missing_leader_fee_epochs(
-        &self,
-        start_epoch: u64,
-        end_epoch: u64,
-    ) -> Result<Vec<u64>> {
-        let rows: Vec<(i64,)> =
-            sqlx::query_as("SELECT epoch FROM leader_fees WHERE epoch >= ? AND epoch <= ?")
-                .bind(start_epoch as i64)
-                .bind(end_epoch as i64)
-                .fetch_all(&self.pool)
-                .await?;
+    pub async fn get_missing_leader_fee_epochs(&self, start_epoch: u64, end_epoch: u64) -> Result<Vec<u64>> {
+        let rows: Vec<(i64,)> = sqlx::query_as("SELECT epoch FROM leader_fees WHERE epoch >= ? AND epoch <= ?")
+            .bind(start_epoch as i64)
+            .bind(end_epoch as i64)
+            .fetch_all(&self.pool)
+            .await?;
 
         let cached: Vec<u64> = rows.into_iter().map(|(e,)| e as u64).collect();
 
-        let missing: Vec<u64> = (start_epoch..=end_epoch)
-            .filter(|e| !cached.contains(e))
-            .collect();
+        let missing: Vec<u64> = (start_epoch..=end_epoch).filter(|e| !cached.contains(e)).collect();
 
         Ok(missing)
     }
@@ -524,11 +496,7 @@ impl Cache {
     // =========================================================================
 
     /// Get cached vote costs
-    pub async fn get_vote_costs(
-        &self,
-        start_epoch: u64,
-        end_epoch: u64,
-    ) -> Result<Vec<EpochVoteCost>> {
+    pub async fn get_vote_costs(&self, start_epoch: u64, end_epoch: u64) -> Result<Vec<EpochVoteCost>> {
         let rows: Vec<VoteCostRow> = sqlx::query_as(
             "SELECT epoch, vote_count, total_fee_lamports, total_fee_sol, source, date
              FROM vote_costs
@@ -769,11 +737,10 @@ impl Cache {
                 .fetch_optional(&self.pool)
                 .await?;
 
-        let transfer_row: Option<(i64,)> =
-            sqlx::query_as("SELECT MAX(slot) FROM sol_transfers WHERE account_key = ?")
-                .bind(account_key)
-                .fetch_optional(&self.pool)
-                .await?;
+        let transfer_row: Option<(i64,)> = sqlx::query_as("SELECT MAX(slot) FROM sol_transfers WHERE account_key = ?")
+            .bind(account_key)
+            .fetch_optional(&self.pool)
+            .await?;
 
         let progress_slot = progress_row.map(|(s,)| s as u64);
         let transfer_slot = transfer_row.and_then(|(s,)| if s > 0 { Some(s as u64) } else { None });
@@ -788,22 +755,16 @@ impl Cache {
 
     /// Store the highest slot we've checked for an account
     pub async fn set_account_progress(&self, account_key: &str, highest_slot: u64) -> Result<()> {
-        sqlx::query(
-            "INSERT OR REPLACE INTO account_progress (account_key, highest_slot) VALUES (?, ?)",
-        )
-        .bind(account_key)
-        .bind(highest_slot as i64)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("INSERT OR REPLACE INTO account_progress (account_key, highest_slot) VALUES (?, ?)")
+            .bind(account_key)
+            .bind(highest_slot as i64)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
     /// Store transfers for a specific account (in a transaction for atomicity)
-    pub async fn store_transfers(
-        &self,
-        transfers: &[SolTransfer],
-        account_key: &str,
-    ) -> Result<()> {
+    pub async fn store_transfers(&self, transfers: &[SolTransfer], account_key: &str) -> Result<()> {
         if transfers.is_empty() {
             return Ok(());
         }
@@ -863,11 +824,10 @@ impl Cache {
         let expenses: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM expenses")
             .fetch_one(&self.pool)
             .await?;
-        let transfers: (i64,) =
-            sqlx::query_as("SELECT COUNT(DISTINCT signature) FROM sol_transfers")
-                .fetch_one(&self.pool)
-                .await
-                .unwrap_or((0,));
+        let transfers: (i64,) = sqlx::query_as("SELECT COUNT(DISTINCT signature) FROM sol_transfers")
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or((0,));
 
         Ok(CacheStats {
             epoch_rewards: epoch_rewards.0 as u64,
@@ -953,7 +913,13 @@ impl std::fmt::Display for CacheStats {
         write!(
             f,
             "{} rewards, {} leader fees, {} MEV claims, {} vote costs, {} transfers, {} prices, {} expenses",
-            self.epoch_rewards, self.leader_fees, self.mev_claims, self.vote_costs, self.transfers, self.prices, self.expenses
+            self.epoch_rewards,
+            self.leader_fees,
+            self.mev_claims,
+            self.vote_costs,
+            self.transfers,
+            self.prices,
+            self.expenses
         )
     }
 }

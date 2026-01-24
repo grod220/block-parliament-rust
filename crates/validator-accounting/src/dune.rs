@@ -20,7 +20,7 @@ use crate::addresses::get_label;
 use crate::config::Config;
 use crate::constants;
 use crate::leader_fees::EpochLeaderFees;
-use crate::transactions::{epoch_to_date, SolTransfer};
+use crate::transactions::{SolTransfer, epoch_to_date};
 use crate::vote_costs::EpochVoteCost;
 
 /// Dune API base URL
@@ -104,8 +104,7 @@ impl DuneClient {
     /// Validate that a string is a valid Solana address (base58, 32-44 chars)
     /// This prevents SQL injection via malicious config values
     fn validate_address(address: &str) -> Result<()> {
-        Pubkey::from_str(address)
-            .map_err(|_| anyhow::anyhow!("Invalid Solana address: '{}'", address))?;
+        Pubkey::from_str(address).map_err(|_| anyhow::anyhow!("Invalid Solana address: '{}'", address))?;
         Ok(())
     }
 
@@ -165,9 +164,7 @@ impl DuneClient {
                     return Ok(Vec::new());
                 }
                 "QUERY_STATE_FAILED" => {
-                    let error = response
-                        .error
-                        .unwrap_or_else(|| "Unknown error".to_string());
+                    let error = response.error.unwrap_or_else(|| "Unknown error".to_string());
                     anyhow::bail!("Query failed: {}", error);
                 }
                 state => {
@@ -194,10 +191,7 @@ impl DuneClient {
     ///
     /// Queries the solana.rewards table for Voting rewards to the vote account.
     /// This captures the commission earned on staking rewards.
-    pub async fn fetch_inflation_rewards(
-        &self,
-        start_date: &str,
-    ) -> Result<Vec<crate::transactions::EpochReward>> {
+    pub async fn fetch_inflation_rewards(&self, start_date: &str) -> Result<Vec<crate::transactions::EpochReward>> {
         Self::validate_date(start_date)?;
         Self::validate_address(&self.vote_account)?;
         println!("  Querying Dune for inflation rewards...");

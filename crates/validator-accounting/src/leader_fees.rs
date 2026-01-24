@@ -86,15 +86,8 @@ pub async fn fetch_leader_fees(
     let current_epoch = get_current_epoch(&client, &config.rpc_url).await?;
     let end = end_epoch.unwrap_or(current_epoch);
 
-    let epoch_word = if start_epoch == end {
-        "epoch"
-    } else {
-        "epochs"
-    };
-    println!(
-        "    Fetching leader fees for {} {}-{}...",
-        epoch_word, start_epoch, end
-    );
+    let epoch_word = if start_epoch == end { "epoch" } else { "epochs" };
+    println!("    Fetching leader fees for {} {}-{}...", epoch_word, start_epoch, end);
 
     let mut all_fees = Vec::new();
 
@@ -122,11 +115,7 @@ pub async fn fetch_leader_fees(
 }
 
 /// Fetch leader fees for a single epoch
-async fn fetch_epoch_leader_fees(
-    client: &reqwest::Client,
-    config: &Config,
-    epoch: u64,
-) -> Result<EpochLeaderFees> {
+async fn fetch_epoch_leader_fees(client: &reqwest::Client, config: &Config, epoch: u64) -> Result<EpochLeaderFees> {
     let epoch_start_slot = epoch * constants::SLOTS_PER_EPOCH;
     let identity = config.identity.to_string();
 
@@ -148,10 +137,7 @@ async fn fetch_epoch_leader_fees(
     }
 
     // Convert slot offsets to absolute slots
-    let absolute_slots: Vec<u64> = leader_slots
-        .iter()
-        .map(|offset| epoch_start_slot + offset)
-        .collect();
+    let absolute_slots: Vec<u64> = leader_slots.iter().map(|offset| epoch_start_slot + offset).collect();
 
     // Fetch block rewards for each leader slot
     let mut total_fees: u64 = 0;
@@ -197,13 +183,7 @@ async fn get_current_epoch(client: &reqwest::Client, rpc_url: &str) -> Result<u6
         "params": []
     });
 
-    let response: serde_json::Value = client
-        .post(rpc_url)
-        .json(&body)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let response: serde_json::Value = client.post(rpc_url).json(&body).send().await?.json().await?;
 
     response["result"]["epoch"]
         .as_u64()
@@ -227,13 +207,7 @@ async fn get_leader_schedule(
         ]
     });
 
-    let response: LeaderScheduleResponse = client
-        .post(rpc_url)
-        .json(&body)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let response: LeaderScheduleResponse = client.post(rpc_url).json(&body).send().await?.json().await?;
 
     Ok(response
         .result
@@ -262,23 +236,14 @@ async fn get_block_fee_reward(
         ]
     });
 
-    let response: BlockResponse = client
-        .post(rpc_url)
-        .json(&body)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let response: BlockResponse = client.post(rpc_url).json(&body).send().await?.json().await?;
 
-    if let Some(result) = response.result {
-        if let Some(rewards) = result.rewards {
-            for reward in rewards {
-                if reward.pubkey == identity
-                    && reward.reward_type.as_deref() == Some("Fee")
-                    && reward.lamports > 0
-                {
-                    return Ok(Some(reward.lamports as u64));
-                }
+    if let Some(result) = response.result
+        && let Some(rewards) = result.rewards
+    {
+        for reward in rewards {
+            if reward.pubkey == identity && reward.reward_type.as_deref() == Some("Fee") && reward.lamports > 0 {
+                return Ok(Some(reward.lamports as u64));
             }
         }
     }
@@ -297,8 +262,7 @@ pub fn total_leader_fees_sol(fees: &[EpochLeaderFees]) -> f64 {
 
 /// Load historical leader slot data from a JSON file (exported from Dune Analytics)
 pub fn load_historical_slots(path: &Path) -> Result<HistoricalLeaderSlots> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
+    let content = std::fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
 
     serde_json::from_str(&content).with_context(|| "Failed to parse historical leader slots JSON")
 }
@@ -308,11 +272,7 @@ pub fn load_historical_slots(path: &Path) -> Result<HistoricalLeaderSlots> {
 /// This queries each slot individually to get the fee reward. Useful when we
 /// have slot numbers from external sources (e.g., Dune Analytics) but need
 /// to get the actual fee amounts from RPC.
-pub async fn fetch_fees_for_slots(
-    config: &Config,
-    epoch: u64,
-    slots: &[u64],
-) -> Result<EpochLeaderFees> {
+pub async fn fetch_fees_for_slots(config: &Config, epoch: u64, slots: &[u64]) -> Result<EpochLeaderFees> {
     let client = reqwest::Client::new();
     let identity = config.identity.to_string();
 
@@ -321,11 +281,7 @@ pub async fn fetch_fees_for_slots(
     let mut skipped: u64 = 0;
     let mut unavailable: u64 = 0;
 
-    println!(
-        "      Fetching {} slots for epoch {}...",
-        slots.len(),
-        epoch
-    );
+    println!("      Fetching {} slots for epoch {}...", slots.len(), epoch);
 
     for (i, slot) in slots.iter().enumerate() {
         match get_block_fee_reward(&client, &config.rpc_url, *slot, &identity).await {
@@ -367,10 +323,7 @@ pub async fn fetch_fees_for_slots(
     );
 
     if unavailable > 0 {
-        println!(
-            "      Warning: {} slots had unavailable/pruned block data",
-            unavailable
-        );
+        println!("      Warning: {} slots had unavailable/pruned block data", unavailable);
     }
 
     Ok(EpochLeaderFees {
@@ -388,10 +341,7 @@ pub async fn fetch_fees_for_slots(
 ///
 /// Reads the JSON file containing slot numbers, queries RPC for each slot's
 /// fee reward, and returns EpochLeaderFees for caching.
-pub async fn import_historical_leader_fees(
-    config: &Config,
-    json_path: &Path,
-) -> Result<Vec<EpochLeaderFees>> {
+pub async fn import_historical_leader_fees(config: &Config, json_path: &Path) -> Result<Vec<EpochLeaderFees>> {
     let historical = load_historical_slots(json_path)?;
 
     println!("    Loaded historical slot data:");
@@ -415,11 +365,11 @@ pub async fn import_historical_leader_fees(
 
     for epoch in epochs {
         let epoch_str = epoch.to_string();
-        if let Some(slots) = historical.slots_by_epoch.get(&epoch_str) {
-            if !slots.is_empty() {
-                let fees = fetch_fees_for_slots(config, epoch, slots).await?;
-                results.push(fees);
-            }
+        if let Some(slots) = historical.slots_by_epoch.get(&epoch_str)
+            && !slots.is_empty()
+        {
+            let fees = fetch_fees_for_slots(config, epoch, slots).await?;
+            results.push(fees);
         }
     }
 

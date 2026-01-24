@@ -1,8 +1,8 @@
 [package]
-name = "validator-finances"
+name = "validator-accounting"
 version.workspace = true
 edition.workspace = true
-description = "Financial tracking for Block Parliament Solana validator"
+description = "Accounting and financial tracking for Block Parliament Solana validator"
 
 [lints]
 workspace = true
@@ -12,7 +12,7 @@ workspace = true
 solana-client.workspace = true
 solana-sdk.workspace = true
 solana-transaction-status.workspace = true
-solana-account-decoder.workspace = true
+solana-commitment-config.workspace = true
 
 # Async runtime
 tokio.workspace = true
@@ -35,13 +35,9 @@ clap.workspace = true
 
 # Error handling
 anyhow.workspace = true
-thiserror.workspace = true
 
 # Config file parsing
 toml.workspace = true
-
-# Pretty printing
-tabled.workspace = true
 
 # SQLite with compile-time checked queries
 sqlx.workspace = true

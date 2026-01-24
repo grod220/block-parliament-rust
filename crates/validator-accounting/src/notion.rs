@@ -107,10 +107,7 @@ enum FormulaValue {
 /// Fetch all hours log entries from Notion
 pub async fn fetch_hours_log(config: &NotionConfig) -> Result<Vec<HoursLogEntry>> {
     let client = reqwest::Client::new();
-    let url = format!(
-        "{}/databases/{}/query",
-        NOTION_API_BASE, config.hours_database_id
-    );
+    let url = format!("{}/databases/{}/query", NOTION_API_BASE, config.hours_database_id);
 
     let mut all_entries = Vec::new();
     let mut cursor: Option<String> = None;
@@ -137,10 +134,7 @@ pub async fn fetch_hours_log(config: &NotionConfig) -> Result<Vec<HoursLogEntry>
             anyhow::bail!("Notion API error {}: {}", status, text);
         }
 
-        let data: QueryResponse = response
-            .json()
-            .await
-            .context("Failed to parse Notion response")?;
+        let data: QueryResponse = response.json().await.context("Failed to parse Notion response")?;
 
         for page in data.results {
             if let Some(entry) = parse_page_to_entry(&page) {
@@ -186,10 +180,7 @@ fn parse_page_to_entry(page: &PageResult) -> Option<HoursLogEntry> {
     let amount_usd = match &page.properties.amount_earned.formula {
         FormulaValue::String { string: Some(s) } => {
             // Parse "$45.00" format
-            s.trim_start_matches('$')
-                .replace(',', "")
-                .parse::<f64>()
-                .unwrap_or(0.0)
+            s.trim_start_matches('$').replace(',', "").parse::<f64>().unwrap_or(0.0)
         }
         FormulaValue::Number { number: Some(n) } => *n,
         _ => 0.0,
@@ -231,11 +222,7 @@ pub fn hours_summary(entries: &[HoursLogEntry]) -> HoursSummary {
     let total_hours: f64 = entries.iter().map(|e| e.hours).sum();
     let total_amount: f64 = entries.iter().map(|e| e.amount_usd).sum();
     let unpaid_hours: f64 = entries.iter().filter(|e| !e.paid).map(|e| e.hours).sum();
-    let unpaid_amount: f64 = entries
-        .iter()
-        .filter(|e| !e.paid)
-        .map(|e| e.amount_usd)
-        .sum();
+    let unpaid_amount: f64 = entries.iter().filter(|e| !e.paid).map(|e| e.amount_usd).sum();
 
     HoursSummary {
         total_entries: entries.len(),

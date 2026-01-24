@@ -6,7 +6,7 @@ use serde::Serialize;
 use solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config;
 use solana_client::rpc_client::RpcClient;
 use solana_client::rpc_config::RpcTransactionConfig;
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_transaction_status::{
@@ -113,10 +113,7 @@ pub async fn fetch_inflation_rewards(
 }
 
 /// Fetch inflation rewards for current epoch (suppresses expected errors)
-pub async fn fetch_current_epoch_rewards(
-    config: &Config,
-    current_epoch: u64,
-) -> Result<Vec<EpochReward>> {
+pub async fn fetch_current_epoch_rewards(config: &Config, current_epoch: u64) -> Result<Vec<EpochReward>> {
     fetch_inflation_rewards_internal(config, current_epoch, Some(current_epoch), true).await
 }
 
@@ -127,8 +124,7 @@ async fn fetch_inflation_rewards_internal(
     end_epoch: Option<u64>,
     suppress_errors: bool,
 ) -> Result<Vec<EpochReward>> {
-    let client =
-        RpcClient::new_with_commitment(config.rpc_url.clone(), CommitmentConfig::confirmed());
+    let client = RpcClient::new_with_commitment(config.rpc_url.clone(), CommitmentConfig::confirmed());
 
     // Get current epoch if end not specified
     let current_epoch = client.get_epoch_info()?.epoch;
@@ -155,10 +151,7 @@ async fn fetch_inflation_rewards_internal(
                     println!("    Epoch {}: {:.6} SOL", epoch, amount_sol);
                 } else if suppress_errors {
                     // Expected for current epoch - rewards not yet distributed
-                    println!(
-                        "    Epoch {} (current): rewards pending epoch completion",
-                        epoch
-                    );
+                    println!("    Epoch {} (current): rewards pending epoch completion", epoch);
                 }
             }
             Err(e) => {
@@ -176,14 +169,12 @@ async fn fetch_inflation_rewards_internal(
 /// Fetch all SOL transfers involving our accounts
 /// Note: Limited to last 200 transactions per account to avoid RPC timeouts
 pub async fn fetch_sol_transfers(config: &Config, verbose: bool) -> Result<Vec<SolTransfer>> {
-    let client =
-        RpcClient::new_with_commitment(config.rpc_url.clone(), CommitmentConfig::confirmed());
+    let client = RpcClient::new_with_commitment(config.rpc_url.clone(), CommitmentConfig::confirmed());
 
     let mut all_transfers = Vec::new();
 
     // SFDP reimbursement address (Solana Foundation vote cost reimbursements)
-    let sfdp_address =
-        Pubkey::from_str(constants::SFDP_REIMBURSEMENT).expect("Invalid SFDP address");
+    let sfdp_address = Pubkey::from_str(constants::SFDP_REIMBURSEMENT).expect("Invalid SFDP address");
 
     // Fetch for withdraw authority, personal wallet, and SFDP address
     // Skip identity (dominated by vote txs) and vote account
@@ -228,9 +219,7 @@ pub async fn fetch_sol_transfers(config: &Config, verbose: bool) -> Result<Vec<S
                         break;
                     }
 
-                    let last_sig = batch
-                        .last()
-                        .and_then(|s| Signature::from_str(&s.signature).ok());
+                    let last_sig = batch.last().and_then(|s| Signature::from_str(&s.signature).ok());
                     signatures.extend(batch);
 
                     if let Some(sig) = last_sig {
@@ -276,12 +265,8 @@ pub async fn fetch_sol_transfers(config: &Config, verbose: bool) -> Result<Vec<S
                 for retry in 0..3 {
                     match client.get_transaction_with_config(&sig, tx_config) {
                         Ok(tx) => {
-                            match parse_sol_transfers_debug(
-                                &tx,
-                                &sig_info.signature,
-                                config,
-                                verbose && processed < 5,
-                            ) {
+                            match parse_sol_transfers_debug(&tx, &sig_info.signature, config, verbose && processed < 5)
+                            {
                                 Some(transfers) => {
                                     transfers_found += transfers.len();
                                     all_transfers.extend(transfers);
@@ -317,10 +302,7 @@ pub async fn fetch_sol_transfers(config: &Config, verbose: bool) -> Result<Vec<S
             }
         }
         if decode_failures > 0 {
-            println!(
-                "      ({} versioned/undecodable transactions skipped)",
-                decode_failures
-            );
+            println!("      ({} versioned/undecodable transactions skipped)", decode_failures);
         }
         println!(
             "      Found {} SOL transfers in {} transactions",
@@ -331,18 +313,10 @@ pub async fn fetch_sol_transfers(config: &Config, verbose: bool) -> Result<Vec<S
     // Deduplicate (transfers might appear in both account histories)
     // Use composite key: (signature, from, to, amount) since one tx can have multiple transfers
     all_transfers.sort_by(|a, b| {
-        (&a.signature, &a.from, &a.to, a.amount_lamports).cmp(&(
-            &b.signature,
-            &b.from,
-            &b.to,
-            b.amount_lamports,
-        ))
+        (&a.signature, &a.from, &a.to, a.amount_lamports).cmp(&(&b.signature, &b.from, &b.to, b.amount_lamports))
     });
     all_transfers.dedup_by(|a, b| {
-        a.signature == b.signature
-            && a.from == b.from
-            && a.to == b.to
-            && a.amount_lamports == b.amount_lamports
+        a.signature == b.signature && a.from == b.from && a.to == b.to && a.amount_lamports == b.amount_lamports
     });
 
     // Sort by timestamp (oldest first)
@@ -368,8 +342,7 @@ pub async fn fetch_transfers_for_account(
     stop_at_slot: Option<u64>,
     verbose: bool,
 ) -> Result<FetchTransfersResult> {
-    let client =
-        RpcClient::new_with_commitment(config.rpc_url.clone(), CommitmentConfig::confirmed());
+    let client = RpcClient::new_with_commitment(config.rpc_url.clone(), CommitmentConfig::confirmed());
 
     println!(
         "    Fetching transactions for {} ({})...",
@@ -410,8 +383,7 @@ pub async fn fetch_transfers_for_account(
 
                 // Track the highest slot seen (first signature in batch is most recent)
                 if let Some(first) = batch.first() {
-                    highest_slot_seen =
-                        Some(highest_slot_seen.map_or(first.slot, |h| h.max(first.slot)));
+                    highest_slot_seen = Some(highest_slot_seen.map_or(first.slot, |h| h.max(first.slot)));
                 }
 
                 // Check if we've hit cached data
@@ -432,9 +404,7 @@ pub async fn fetch_transfers_for_account(
                     signatures.extend(batch.clone());
                 }
 
-                let last_sig = batch
-                    .last()
-                    .and_then(|s| Signature::from_str(&s.signature).ok());
+                let last_sig = batch.last().and_then(|s| Signature::from_str(&s.signature).ok());
 
                 if let Some(sig) = last_sig {
                     before = Some(sig);
@@ -492,12 +462,7 @@ pub async fn fetch_transfers_for_account(
             for retry in 0..3 {
                 match client.get_transaction_with_config(&sig, tx_config) {
                     Ok(tx) => {
-                        match parse_sol_transfers_debug(
-                            &tx,
-                            &sig_info.signature,
-                            config,
-                            verbose && processed < 5,
-                        ) {
+                        match parse_sol_transfers_debug(&tx, &sig_info.signature, config, verbose && processed < 5) {
                             Some(t) => {
                                 transfers_found += t.len();
                                 transfers.extend(t);
@@ -512,11 +477,7 @@ pub async fn fetch_transfers_for_account(
                     }
                     Err(e) => {
                         if retry == 2 {
-                            eprintln!(
-                                "      Failed to fetch tx {}: {}",
-                                &sig_info.signature[..16],
-                                e
-                            );
+                            eprintln!("      Failed to fetch tx {}: {}", &sig_info.signature[..16], e);
                         }
                         sleep(Duration::from_secs(1)).await;
                     }
@@ -536,10 +497,7 @@ pub async fn fetch_transfers_for_account(
     }
 
     if decode_failures > 0 {
-        println!(
-            "      ({} versioned/undecodable transactions skipped)",
-            decode_failures
-        );
+        println!("      ({} versioned/undecodable transactions skipped)", decode_failures);
     }
     println!(
         "      Found {} SOL transfers in {} transactions",
@@ -557,8 +515,7 @@ pub async fn fetch_transfers_for_account(
 /// (they're all vote transactions). Transfers involving them will be captured when
 /// we query the other accounts' histories.
 pub fn get_tracked_accounts(config: &Config) -> Vec<(&'static str, Pubkey)> {
-    let sfdp_address =
-        Pubkey::from_str(constants::SFDP_REIMBURSEMENT).expect("Invalid SFDP address");
+    let sfdp_address = Pubkey::from_str(constants::SFDP_REIMBURSEMENT).expect("Invalid SFDP address");
 
     vec![
         ("withdraw_authority", config.withdraw_authority),
@@ -602,11 +559,7 @@ fn parse_sol_transfers_debug(
     let mut transfers = Vec::new();
 
     // Look for significant balance changes (> 0.001 SOL)
-    for i in 0..account_keys
-        .len()
-        .min(pre_balances.len())
-        .min(post_balances.len())
-    {
+    for i in 0..account_keys.len().min(pre_balances.len()).min(post_balances.len()) {
         let pre = pre_balances[i];
         let post = post_balances[i];
         let diff = post as i64 - pre as i64;
@@ -637,11 +590,7 @@ fn parse_sol_transfers_debug(
         }
 
         // Find the counterparty
-        for j in 0..account_keys
-            .len()
-            .min(pre_balances.len())
-            .min(post_balances.len())
-        {
+        for j in 0..account_keys.len().min(pre_balances.len()).min(post_balances.len()) {
             if i == j {
                 continue;
             }
@@ -681,11 +630,7 @@ fn parse_sol_transfers_debug(
         }
     }
 
-    if transfers.is_empty() {
-        None
-    } else {
-        Some(transfers)
-    }
+    if transfers.is_empty() { None } else { Some(transfers) }
 }
 
 /// Categorize transfers based on sender/receiver

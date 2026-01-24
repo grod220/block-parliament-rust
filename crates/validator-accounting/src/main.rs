@@ -20,32 +20,46 @@ mod vote_costs;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use solana_client::rpc_client::RpcClient;
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_commitment_config::CommitmentConfig;
 use std::path::PathBuf;
 
 use cache::Cache;
 use config::FileConfig;
 use expenses::{Expense, ExpenseCategory};
 
-/// Default config file path
+/// Default config file name
 const CONFIG_FILE: &str = "config.toml";
 
+/// Possible locations to find config.toml
+const CONFIG_SEARCH_PATHS: &[&str] = &["config.toml", "crates/validator-accounting/config.toml"];
+
 /// Load config file or exit with helpful message
-fn load_config_file() -> Result<FileConfig> {
-    let path = std::path::Path::new(CONFIG_FILE);
+fn load_config_file(config_path: Option<&PathBuf>) -> Result<FileConfig> {
+    let path = if let Some(p) = config_path {
+        p.clone()
+    } else {
+        // Search for config in known locations
+        CONFIG_SEARCH_PATHS
+            .iter()
+            .map(PathBuf::from)
+            .find(|p| p.exists())
+            .unwrap_or_else(|| PathBuf::from(CONFIG_FILE))
+    };
 
     if !path.exists() {
         anyhow::bail!(
-            "Config file '{}' not found.\n\n\
+            "Config file not found.\n\n\
+            Searched in:\n\
+            - ./config.toml\n\
+            - ./crates/validator-accounting/config.toml\n\n\
             To get started:\n\
             1. Copy config.toml.example to config.toml\n\
             2. Fill in your API keys\n\n\
-            See config.toml.example for the required format.",
-            CONFIG_FILE
+            You can also specify a config path with --config <path>",
         );
     }
 
-    FileConfig::load(path)
+    FileConfig::load(&path)
 }
 
 /// Mask API keys in URLs for safe logging
@@ -63,9 +77,13 @@ fn mask_api_key(url: &str) -> String {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "validator-finances")]
-#[command(about = "Financial tracking for Block Parliament Solana validator")]
+#[command(name = "validator-accounting")]
+#[command(about = "Accounting and financial tracking for Block Parliament Solana validator")]
 struct Args {
+    /// Path to config file
+    #[arg(short, long, global = true)]
+    config: Option<PathBuf>,
+
     /// Data directory for database (expenses, cache)
     #[arg(short, long, default_value = "./data", global = true)]
     data_dir: PathBuf,
@@ -279,7 +297,7 @@ async fn main() -> Result<()> {
 
     // Handle subcommands
     if let Some(command) = args.command {
-        return handle_command(command, &cache).await;
+        return handle_command(command, &cache, args.config.as_ref()).await;
     }
 
     // No subcommand - run the main report generation
@@ -287,26 +305,27 @@ async fn main() -> Result<()> {
 }
 
 /// Handle expense management subcommands
-async fn handle_command(command: Command, cache: &Cache) -> Result<()> {
+async fn handle_command(command: Command, cache: &Cache, config_path: Option<&PathBuf>) -> Result<()> {
     match command {
         Command::Expense { action } => handle_expense_command(action, cache).await,
-        Command::LeaderSlots { action } => handle_leader_slots_command(action, cache).await,
+        Command::LeaderSlots { action } => handle_leader_slots_command(action, cache, config_path).await,
         Command::VoteCosts { action } => handle_vote_costs_command(action, cache).await,
-        Command::Dune { action } => handle_dune_command(action, cache).await,
+        Command::Dune { action } => handle_dune_command(action, cache, config_path).await,
     }
 }
 
 /// Handle leader slots subcommands
-async fn handle_leader_slots_command(action: LeaderSlotsCommand, cache: &Cache) -> Result<()> {
+async fn handle_leader_slots_command(
+    action: LeaderSlotsCommand,
+    cache: &Cache,
+    config_path: Option<&PathBuf>,
+) -> Result<()> {
     match action {
         LeaderSlotsCommand::Import { file, rpc_url } => {
-            println!(
-                "Importing historical leader slot data from {}...\n",
-                file.display()
-            );
+            println!("Importing historical leader slot data from {}...\n", file.display());
 
             // Load config file and initialize runtime configuration
-            let file_config = load_config_file()?;
+            let file_config = load_config_file(config_path)?;
             let config = config::Config::from_file(&file_config, rpc_url)?;
             println!("Using RPC: {}\n", mask_api_key(&config.rpc_url));
 
@@ -355,9 +374,7 @@ async fn handle_leader_slots_command(action: LeaderSlotsCommand, cache: &Cache) 
 
             if fees.is_empty() {
                 println!("No leader fee data cached.");
-                println!(
-                    "\nUse 'validator-finances leader-slots import <file.json>' to import data"
-                );
+                println!("\nUse 'validator-accounting leader-slots import <file.json>' to import data");
             } else {
                 println!(
                     "{:<8} {:<12} {:>10} {:>10} {:>10} {:>14}",
@@ -436,10 +453,7 @@ async fn handle_vote_costs_command(action: VoteCostsCommand, cache: &Cache) -> R
             }
 
             println!("{}", "-".repeat(60));
-            println!(
-                "{:<8} {:>12} {:>12} {:>14.6}",
-                "Total", "", total_votes, total_cost
-            );
+            println!("{:<8} {:>12} {:>12} {:>14.6}", "Total", "", total_votes, total_cost);
 
             println!("\nData cached to database.");
             Ok(())
@@ -450,10 +464,8 @@ async fn handle_vote_costs_command(action: VoteCostsCommand, cache: &Cache) -> R
 
             if costs.is_empty() {
                 println!("No vote cost data cached.");
-                println!("\nUse 'validator-finances vote-costs import <file.json>' to import data");
-                println!(
-                    "Or 'validator-finances vote-costs estimate --start N --end M' to estimate"
-                );
+                println!("\nUse 'validator-accounting vote-costs import <file.json>' to import data");
+                println!("Or 'validator-accounting vote-costs estimate --start N --end M' to estimate");
             } else {
                 println!(
                     "{:<8} {:<12} {:>12} {:>14} {:>10}",
@@ -478,10 +490,7 @@ async fn handle_vote_costs_command(action: VoteCostsCommand, cache: &Cache) -> R
                 }
 
                 println!("{}", "-".repeat(60));
-                println!(
-                    "{:<8} {:>12} {:>12} {:>14.6}",
-                    "Total", "", total_votes, total_cost
-                );
+                println!("{:<8} {:>12} {:>12} {:>14.6}", "Total", "", total_votes, total_cost);
                 println!("\n{} epoch(s) cached", costs.len());
             }
             Ok(())
@@ -489,10 +498,7 @@ async fn handle_vote_costs_command(action: VoteCostsCommand, cache: &Cache) -> R
 
         VoteCostsCommand::Estimate { start, end } => {
             let epoch_word = if start == end { "epoch" } else { "epochs" };
-            println!(
-                "Estimating vote costs for {} {}-{}...\n",
-                epoch_word, start, end
-            );
+            println!("Estimating vote costs for {} {}-{}...\n", epoch_word, start, end);
 
             let estimates = vote_costs::estimate_vote_costs(start, end);
 
@@ -522,8 +528,8 @@ async fn handle_expense_command(action: ExpenseCommand, cache: &Cache) -> Result
             let expenses = cache.get_expenses().await?;
             if expenses.is_empty() {
                 println!("No expenses recorded.");
-                println!("\nUse 'validator-finances expense add' to add expenses");
-                println!("Or 'validator-finances expense import <file.csv>' to import from CSV");
+                println!("\nUse 'validator-accounting expense add' to add expenses");
+                println!("Or 'validator-accounting expense import <file.csv>' to import from CSV");
             } else {
                 println!(
                     "{:<4} {:<12} {:<15} {:<12} {:>10}  Description",
@@ -575,10 +581,7 @@ async fn handle_expense_command(action: ExpenseCommand, cache: &Cache) -> Result
             };
 
             let id = cache.add_expense(&expense).await?;
-            println!(
-                "Added expense #{}: {} - ${:.2}",
-                id, expense.vendor, expense.amount_usd
-            );
+            println!("Added expense #{}: {} - ${:.2}", id, expense.vendor, expense.amount_usd);
             Ok(())
         }
 
@@ -608,9 +611,9 @@ async fn handle_expense_command(action: ExpenseCommand, cache: &Cache) -> Result
 }
 
 /// Handle Dune Analytics import subcommands
-async fn handle_dune_command(action: DuneCommand, cache: &Cache) -> Result<()> {
+async fn handle_dune_command(action: DuneCommand, cache: &Cache, config_path: Option<&PathBuf>) -> Result<()> {
     // Load config to get API key and validator addresses
-    let file_config = load_config_file()?;
+    let file_config = load_config_file(config_path)?;
     let config = config::Config::from_file(&file_config, None)?;
 
     let api_key = file_config
@@ -859,7 +862,7 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
     println!("=============================================\n");
 
     // Load config file and initialize runtime configuration
-    let file_config = load_config_file()?;
+    let file_config = load_config_file(args.config.as_ref())?;
     let config = config::Config::from_file(&file_config, args.rpc_url)?;
     println!("Vote Account: {}", config.vote_account);
     println!("Identity: {}", config.identity);
@@ -872,8 +875,7 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
     }
 
     // Get current epoch to know what's "complete" vs "in progress"
-    let rpc_client =
-        RpcClient::new_with_commitment(config.rpc_url.clone(), CommitmentConfig::confirmed());
+    let rpc_client = RpcClient::new_with_commitment(config.rpc_url.clone(), CommitmentConfig::confirmed());
     let current_epoch = rpc_client.get_epoch_info()?.epoch;
     println!("Current epoch: {}\n", current_epoch);
 
@@ -919,32 +921,19 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
         "  SFDP reimbursements: {} transfers",
         categorized.sfdp_reimbursements.len()
     );
-    println!(
-        "  MEV deposits: {} transfers",
-        categorized.mev_deposits.len()
-    );
-    println!(
-        "  Vote fee funding: {} transfers",
-        categorized.vote_funding.len()
-    );
+    println!("  MEV deposits: {} transfers", categorized.mev_deposits.len());
+    println!("  Vote fee funding: {} transfers", categorized.vote_funding.len());
     println!("  Withdrawals: {} transfers", categorized.withdrawals.len());
     println!("  Other: {} transfers\n", categorized.other.len());
 
     // Step 4: Fetch Jito MEV claims (with caching)
     println!("Fetching Jito MEV claims...");
-    let mev_claims = fetch_mev_with_cache(
-        &cache,
-        &config,
-        start_epoch,
-        end_epoch,
-        current_epoch,
-        args.no_cache,
-    )
-    .await
-    .unwrap_or_else(|e| {
-        eprintln!("  Warning: Failed to fetch MEV claims: {}", e);
-        Vec::new()
-    });
+    let mev_claims = fetch_mev_with_cache(&cache, &config, start_epoch, end_epoch, current_epoch, args.no_cache)
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("  Warning: Failed to fetch MEV claims: {}", e);
+            Vec::new()
+        });
     let total_mev = jito::total_mev_sol(&mev_claims);
     println!(
         "  Found {} MEV claims totaling {:.6} SOL\n",
@@ -981,8 +970,7 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
     let cached_count = vote_costs.len();
 
     // Find missing epochs and auto-estimate them
-    let cached_epochs: std::collections::HashSet<u64> =
-        vote_costs.iter().map(|c| c.epoch).collect();
+    let cached_epochs: std::collections::HashSet<u64> = vote_costs.iter().map(|c| c.epoch).collect();
     let mut estimated_epochs = Vec::new();
     for epoch in start_epoch..=end_epoch {
         if !cached_epochs.contains(&epoch) {
@@ -995,9 +983,7 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
     vote_costs.sort_by_key(|c| c.epoch);
 
     if vote_costs.is_empty() {
-        println!(
-            "  No vote costs cached (use 'vote-costs import' or 'vote-costs estimate' to add)\n"
-        );
+        println!("  No vote costs cached (use 'vote-costs import' or 'vote-costs estimate' to add)\n");
     } else {
         let total_vote_cost = vote_costs::total_vote_costs_sol(&vote_costs);
         if !estimated_epochs.is_empty() {
@@ -1071,14 +1057,8 @@ async fn run_report_generation(args: Args, cache: Cache) -> Result<()> {
 
     // Step 8: Fetch historical prices (with caching)
     println!("Fetching historical SOL prices...");
-    let price_cache = fetch_prices_with_cache(
-        &cache,
-        &rewards,
-        &transfers,
-        &config.coingecko_api_key,
-        args.no_cache,
-    )
-    .await?;
+    let price_cache =
+        fetch_prices_with_cache(&cache, &rewards, &transfers, &config.coingecko_api_key, args.no_cache).await?;
     println!("  Cached {} daily prices\n", price_cache.len());
 
     // Step 9: Generate reports
@@ -1120,8 +1100,7 @@ async fn fetch_rewards_with_cache(
 ) -> Result<Vec<transactions::EpochReward>> {
     if no_cache {
         // Fetch everything fresh
-        let rewards =
-            transactions::fetch_inflation_rewards(config, start_epoch, Some(end_epoch)).await?;
+        let rewards = transactions::fetch_inflation_rewards(config, start_epoch, Some(end_epoch)).await?;
         cache.store_epoch_rewards(&rewards).await?;
         return Ok(rewards);
     }
@@ -1134,16 +1113,10 @@ async fn fetch_rewards_with_cache(
     let cached_count = rewards.len();
 
     // Find missing completed epochs (exclude current - it's always "missing" but not fetchable)
-    let missing = cache
-        .get_missing_reward_epochs(start_epoch, completed_end)
-        .await?;
+    let missing = cache.get_missing_reward_epochs(start_epoch, completed_end).await?;
 
     if !missing.is_empty() {
-        let epoch_word = if missing.len() == 1 {
-            "epoch"
-        } else {
-            "epochs"
-        };
+        let epoch_word = if missing.len() == 1 { "epoch" } else { "epochs" };
         println!("    Fetching {} missing {}...", missing.len(), epoch_word);
 
         let mut rpc_failures: Vec<u64> = Vec::new();
@@ -1163,9 +1136,7 @@ async fn fetch_rewards_with_cache(
         }
 
         // Fall back to Dune for epochs that RPC couldn't fetch
-        if let Some((dune_client, start_date)) =
-            prepare_dune_fallback(&rpc_failures, dune_api_key, config)
-        {
+        if let Some((dune_client, start_date)) = prepare_dune_fallback(&rpc_failures, dune_api_key, config) {
             match dune_client.fetch_inflation_rewards(&start_date).await {
                 Ok(dune_rewards) => {
                     // Filter to only the epochs we need
@@ -1179,8 +1150,7 @@ async fn fetch_rewards_with_cache(
                         cache.store_epoch_rewards(&needed).await?;
 
                         // Track which epochs were filled by Dune
-                        let filled_epochs: std::collections::HashSet<u64> =
-                            needed.iter().map(|r| r.epoch).collect();
+                        let filled_epochs: std::collections::HashSet<u64> = needed.iter().map(|r| r.epoch).collect();
                         rewards.extend(needed);
 
                         // Cache epochs that remain unfilled (no data exists)
@@ -1214,10 +1184,7 @@ async fn fetch_rewards_with_cache(
                                 date: Some(transactions::epoch_to_date(epoch)),
                             })
                             .collect();
-                        println!(
-                            "    Caching {} epochs with no reward data",
-                            empty_epochs.len()
-                        );
+                        println!("    Caching {} epochs with no reward data", empty_epochs.len());
                         cache.store_epoch_rewards(&empty_epochs).await?;
                     }
                 }
@@ -1230,12 +1197,10 @@ async fn fetch_rewards_with_cache(
 
     // Fetch current epoch if requested (always fresh, don't cache, no Dune fallback)
     // Note: Current epoch rewards are pending until epoch completion
-    if end_epoch >= current_epoch {
-        if let Ok(mut current_rewards) =
-            transactions::fetch_current_epoch_rewards(config, current_epoch).await
-        {
-            rewards.append(&mut current_rewards);
-        }
+    if end_epoch >= current_epoch
+        && let Ok(mut current_rewards) = transactions::fetch_current_epoch_rewards(config, current_epoch).await
+    {
+        rewards.append(&mut current_rewards);
     }
 
     if cached_count > 0 {
@@ -1278,9 +1243,7 @@ async fn fetch_mev_with_cache(
     // If we have MEV data for a recent completed epoch, we're up to date.
     // (Epochs without MEV rewards are not returned by the API, so checking
     // for "missing" epochs would cause constant re-fetching.)
-    let has_recent_data = claims
-        .iter()
-        .any(|c| c.epoch >= completed_end.saturating_sub(1));
+    let has_recent_data = claims.iter().any(|c| c.epoch >= completed_end.saturating_sub(1));
 
     if !has_recent_data {
         println!(
@@ -1329,11 +1292,7 @@ async fn fetch_leader_fees_with_cache(
     if no_cache {
         let fees = leader_fees::fetch_leader_fees(config, start_epoch, Some(end_epoch)).await?;
         // Only cache completed epochs
-        let completed: Vec<_> = fees
-            .iter()
-            .filter(|f| f.epoch < current_epoch)
-            .cloned()
-            .collect();
+        let completed: Vec<_> = fees.iter().filter(|f| f.epoch < current_epoch).cloned().collect();
         cache.store_leader_fees(&completed).await?;
         return Ok(fees);
     }
@@ -1354,11 +1313,7 @@ async fn fetch_leader_fees_with_cache(
     let need_current = end_epoch >= current_epoch;
 
     if !missing.is_empty() {
-        let epoch_word = if missing.len() == 1 {
-            "epoch"
-        } else {
-            "epochs"
-        };
+        let epoch_word = if missing.len() == 1 { "epoch" } else { "epochs" };
         println!(
             "    Fetching {} missing {} (this may take a while)...",
             missing.len(),
@@ -1372,11 +1327,7 @@ async fn fetch_leader_fees_with_cache(
             match leader_fees::fetch_leader_fees(config, *epoch, Some(*epoch)).await {
                 Ok(fetched) if !fetched.is_empty() => {
                     // Store completed epochs in cache
-                    let completed: Vec<_> = fetched
-                        .iter()
-                        .filter(|f| f.epoch < current_epoch)
-                        .cloned()
-                        .collect();
+                    let completed: Vec<_> = fetched.iter().filter(|f| f.epoch < current_epoch).cloned().collect();
                     cache.store_leader_fees(&completed).await?;
                     fees.extend(fetched);
                 }
@@ -1388,9 +1339,7 @@ async fn fetch_leader_fees_with_cache(
         }
 
         // Fall back to Dune for epochs that RPC couldn't fetch
-        if let Some((dune_client, start_date)) =
-            prepare_dune_fallback(&rpc_failures, dune_api_key, config)
-        {
+        if let Some((dune_client, start_date)) = prepare_dune_fallback(&rpc_failures, dune_api_key, config) {
             match dune_client.fetch_leader_fees(&start_date).await {
                 Ok(dune_fees) => {
                     let needed: Vec<_> = dune_fees
@@ -1403,8 +1352,7 @@ async fn fetch_leader_fees_with_cache(
                         cache.store_leader_fees(&needed).await?;
 
                         // Track which epochs were filled by Dune
-                        let filled_epochs: std::collections::HashSet<u64> =
-                            needed.iter().map(|f| f.epoch).collect();
+                        let filled_epochs: std::collections::HashSet<u64> = needed.iter().map(|f| f.epoch).collect();
                         fees.extend(needed);
 
                         // Cache epochs that remain unfilled (no data exists)
@@ -1442,10 +1390,7 @@ async fn fetch_leader_fees_with_cache(
                                 date: Some(transactions::epoch_to_date(epoch)),
                             })
                             .collect();
-                        println!(
-                            "    Caching {} epochs with no leader data",
-                            empty_epochs.len()
-                        );
+                        println!("    Caching {} epochs with no leader data", empty_epochs.len());
                         cache.store_leader_fees(&empty_epochs).await?;
                     }
                 }
@@ -1457,12 +1402,10 @@ async fn fetch_leader_fees_with_cache(
     }
 
     // Fetch current epoch (always fresh, don't cache)
-    if need_current {
-        if let Ok(current_fees) =
-            leader_fees::fetch_leader_fees(config, current_epoch, Some(current_epoch)).await
-        {
-            fees.extend(current_fees);
-        }
+    if need_current
+        && let Ok(current_fees) = leader_fees::fetch_leader_fees(config, current_epoch, Some(current_epoch)).await
+    {
+        fees.extend(current_fees);
     }
 
     if cached_count > 0 {
@@ -1495,8 +1438,7 @@ async fn fetch_prices_with_cache(
 
     // Fetch only missing prices (skips dates already in cache)
     let new_prices =
-        prices::fetch_historical_prices_with_cache(rewards, transfers, api_key, Some(&price_cache))
-            .await?;
+        prices::fetch_historical_prices_with_cache(rewards, transfers, api_key, Some(&price_cache)).await?;
 
     // Merge new prices into cache
     let new_count = new_prices.len();
@@ -1550,10 +1492,8 @@ async fn fetch_transfers_with_cache(
     let cached_count = cached_transfers.len();
 
     // Track signatures we've seen (for deduplication)
-    let mut seen_signatures: std::collections::HashSet<String> = cached_transfers
-        .iter()
-        .map(|t| t.signature.clone())
-        .collect();
+    let mut seen_signatures: std::collections::HashSet<String> =
+        cached_transfers.iter().map(|t| t.signature.clone()).collect();
 
     let mut all_transfers = cached_transfers;
 
@@ -1570,15 +1510,7 @@ async fn fetch_transfers_with_cache(
         }
 
         // Fetch new transfers (will stop when hitting already-cached slot)
-        match transactions::fetch_transfers_for_account(
-            config,
-            &account,
-            label,
-            latest_slot,
-            verbose,
-        )
-        .await
-        {
+        match transactions::fetch_transfers_for_account(config, &account, label, latest_slot, verbose).await {
             Ok(result) => {
                 // Store progress even if no transfers found (for accounts with only versioned txs)
                 if let Some(highest_slot) = result.highest_slot_seen {
@@ -1587,11 +1519,7 @@ async fn fetch_transfers_with_cache(
 
                 if !result.transfers.is_empty() {
                     if verbose {
-                        println!(
-                            "    {}: fetched {} new transfers",
-                            label,
-                            result.transfers.len()
-                        );
+                        println!("    {}: fetched {} new transfers", label, result.transfers.len());
                     }
 
                     // Store new transfers
@@ -1614,34 +1542,32 @@ async fn fetch_transfers_with_cache(
     }
 
     // Fall back to Dune if RPC failed and we have few/no transfers
-    if (rpc_failed || all_transfers.is_empty()) && dune_api_key.is_some() {
-        if let Some(api_key) = dune_api_key {
-            println!("    Falling back to Dune for transfer history...");
+    if (rpc_failed || all_transfers.is_empty())
+        && dune_api_key.is_some()
+        && let Some(api_key) = dune_api_key
+    {
+        println!("    Falling back to Dune for transfer history...");
 
-            let dune_client = dune::DuneClient::new(api_key.to_string(), config);
-            match dune_client.fetch_transfers(bootstrap_date).await {
-                Ok(dune_transfers) => {
-                    // Collect transfers that are actually new (not already seen)
-                    let mut dune_new_transfers = Vec::new();
-                    for transfer in dune_transfers {
-                        if seen_signatures.insert(transfer.signature.clone()) {
-                            dune_new_transfers.push(transfer);
-                        }
-                    }
-                    if !dune_new_transfers.is_empty() {
-                        println!(
-                            "    Dune returned {} new transfers",
-                            dune_new_transfers.len()
-                        );
-                        // Store the new Dune transfers to cache
-                        cache.store_transfers(&dune_new_transfers, "dune").await?;
-                        // Add to our collection
-                        all_transfers.extend(dune_new_transfers);
+        let dune_client = dune::DuneClient::new(api_key.to_string(), config);
+        match dune_client.fetch_transfers(bootstrap_date).await {
+            Ok(dune_transfers) => {
+                // Collect transfers that are actually new (not already seen)
+                let mut dune_new_transfers = Vec::new();
+                for transfer in dune_transfers {
+                    if seen_signatures.insert(transfer.signature.clone()) {
+                        dune_new_transfers.push(transfer);
                     }
                 }
-                Err(e) => {
-                    eprintln!("    Warning: Dune fallback failed: {}", e);
+                if !dune_new_transfers.is_empty() {
+                    println!("    Dune returned {} new transfers", dune_new_transfers.len());
+                    // Store the new Dune transfers to cache
+                    cache.store_transfers(&dune_new_transfers, "dune").await?;
+                    // Add to our collection
+                    all_transfers.extend(dune_new_transfers);
                 }
+            }
+            Err(e) => {
+                eprintln!("    Warning: Dune fallback failed: {}", e);
             }
         }
     }

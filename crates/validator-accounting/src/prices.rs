@@ -53,15 +53,15 @@ pub async fn fetch_historical_prices_with_cache(
     let mut dates: Vec<NaiveDate> = Vec::new();
 
     for reward in rewards {
-        if let Some(date) = &reward.date {
-            if let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d") {
-                // Skip if already in existing cache
-                if existing_prices.is_some_and(|p| p.contains_key(date)) {
-                    continue;
-                }
-                if !dates.contains(&d) {
-                    dates.push(d);
-                }
+        if let Some(date) = &reward.date
+            && let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        {
+            // Skip if already in existing cache
+            if existing_prices.is_some_and(|p| p.contains_key(date)) {
+                continue;
+            }
+            if !dates.contains(&d) {
+                dates.push(d);
             }
         }
     }
@@ -70,15 +70,15 @@ pub async fn fetch_historical_prices_with_cache(
     let min_valid_date = NaiveDate::from_ymd_opt(2025, 11, 1).unwrap();
 
     for transfer in transfers {
-        if let Some(date) = &transfer.date {
-            if let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d") {
-                // Skip if already in existing cache
-                if existing_prices.is_some_and(|p| p.contains_key(date)) {
-                    continue;
-                }
-                if d >= min_valid_date && !dates.contains(&d) {
-                    dates.push(d);
-                }
+        if let Some(date) = &transfer.date
+            && let Ok(d) = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        {
+            // Skip if already in existing cache
+            if existing_prices.is_some_and(|p| p.contains_key(date)) {
+                continue;
+            }
+            if d >= min_valid_date && !dates.contains(&d) {
+                dates.push(d);
             }
         }
     }
@@ -86,10 +86,10 @@ pub async fn fetch_historical_prices_with_cache(
     if dates.is_empty() {
         // No dates to fetch, get current price if not cached
         let today = Utc::now().format("%Y-%m-%d").to_string();
-        if existing_prices.is_none_or(|p| !p.contains_key(&today)) {
-            if let Ok(price) = fetch_current_price(api_key).await {
-                cache.insert(today, price);
-            }
+        if existing_prices.is_none_or(|p| !p.contains_key(&today))
+            && let Ok(price) = fetch_current_price(api_key).await
+        {
+            cache.insert(today, price);
         }
         return Ok(cache);
     }
@@ -118,10 +118,7 @@ pub async fn fetch_historical_prices_with_cache(
             eprintln!("    ⚠️  Financial reports may be inaccurate!");
             // Use fallback price
             for date in &dates {
-                cache.insert(
-                    date.format("%Y-%m-%d").to_string(),
-                    constants::FALLBACK_SOL_PRICE,
-                );
+                cache.insert(date.format("%Y-%m-%d").to_string(), constants::FALLBACK_SOL_PRICE);
             }
         }
     }
@@ -136,11 +133,7 @@ pub async fn fetch_historical_prices_with_cache(
 }
 
 /// Fetch price range from CoinGecko
-async fn fetch_price_range(
-    from: NaiveDate,
-    to: NaiveDate,
-    api_key: &str,
-) -> Result<Vec<(String, f64)>> {
+async fn fetch_price_range(from: NaiveDate, to: NaiveDate, api_key: &str) -> Result<Vec<(String, f64)>> {
     let client = reqwest::Client::new();
 
     // Convert dates to Unix timestamps
@@ -194,10 +187,7 @@ async fn fetch_price_range(
                     last_error = Some(anyhow::anyhow!("Rate limited (429)"));
                     continue;
                 } else {
-                    last_error = Some(anyhow::anyhow!(
-                        "CoinGecko API returned status: {}",
-                        response.status()
-                    ));
+                    last_error = Some(anyhow::anyhow!("CoinGecko API returned status: {}", response.status()));
                 }
             }
             Err(e) => {
@@ -206,9 +196,8 @@ async fn fetch_price_range(
         }
     }
 
-    let data = data.ok_or_else(|| {
-        last_error.unwrap_or_else(|| anyhow::anyhow!("Failed after {} retries", max_retries))
-    })?;
+    let data =
+        data.ok_or_else(|| last_error.unwrap_or_else(|| anyhow::anyhow!("Failed after {} retries", max_retries)))?;
 
     // Convert to date -> price map (use daily close price)
     let mut daily_prices: HashMap<String, f64> = HashMap::new();
@@ -229,11 +218,7 @@ async fn fetch_price_range(
 pub async fn fetch_current_price(api_key: &str) -> Result<f64> {
     let client = reqwest::Client::new();
 
-    let url = format!(
-        "{}{}",
-        constants::COINGECKO_API_BASE,
-        constants::COINGECKO_SIMPLE_PRICE
-    );
+    let url = format!("{}{}", constants::COINGECKO_API_BASE, constants::COINGECKO_SIMPLE_PRICE);
 
     // Retry with exponential backoff
     let max_retries = 3;
@@ -269,10 +254,7 @@ pub async fn fetch_current_price(api_key: &str) -> Result<f64> {
                     last_error = Some(anyhow::anyhow!("Rate limited (429)"));
                     continue;
                 } else {
-                    last_error = Some(anyhow::anyhow!(
-                        "API returned status: {}",
-                        response.status()
-                    ));
+                    last_error = Some(anyhow::anyhow!("API returned status: {}", response.status()));
                 }
             }
             Err(e) => {

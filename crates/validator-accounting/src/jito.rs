@@ -41,11 +41,7 @@ struct JitoEpochData {
 pub async fn fetch_mev_claims(config: &Config) -> Result<Vec<MevClaim>> {
     let client = reqwest::Client::new();
 
-    let url = format!(
-        "{}/validators/{}",
-        constants::JITO_API_BASE,
-        config.vote_account
-    );
+    let url = format!("{}/validators/{}", constants::JITO_API_BASE, config.vote_account);
     println!("    Querying Jito API...");
 
     // Retry with exponential backoff (longer delays for rate limiting)
@@ -63,21 +59,12 @@ pub async fn fetch_mev_claims(config: &Config) -> Result<Vec<MevClaim>> {
                 attempt,
                 max_retries - 1,
                 delay,
-                if was_rate_limited {
-                    " (rate limited)"
-                } else {
-                    ""
-                }
+                if was_rate_limited { " (rate limited)" } else { "" }
             );
             sleep(delay).await;
         }
 
-        match client
-            .get(&url)
-            .header("Accept", "application/json")
-            .send()
-            .await
-        {
+        match client.get(&url).header("Accept", "application/json").send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     // API returns an array of epoch data directly
@@ -90,10 +77,7 @@ pub async fn fetch_mev_claims(config: &Config) -> Result<Vec<MevClaim>> {
                     continue;
                 } else {
                     was_rate_limited = false;
-                    last_error = Some(anyhow::anyhow!(
-                        "Jito API returned status: {}",
-                        response.status()
-                    ));
+                    last_error = Some(anyhow::anyhow!("Jito API returned status: {}", response.status()));
                 }
             }
             Err(e) => {

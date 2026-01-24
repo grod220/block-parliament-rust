@@ -262,18 +262,11 @@ fn add_address(
 
 /// Get label for an address, or return "Unknown" with the address
 pub fn get_label(pubkey: &Pubkey) -> AddressLabel {
-    KNOWN_ADDRESSES
-        .get(pubkey)
-        .cloned()
-        .unwrap_or_else(|| AddressLabel {
-            category: AddressCategory::Unknown,
-            name: format!(
-                "{}...{}",
-                &pubkey.to_string()[..4],
-                &pubkey.to_string()[40..]
-            ),
-            description: None,
-        })
+    KNOWN_ADDRESSES.get(pubkey).cloned().unwrap_or_else(|| AddressLabel {
+        category: AddressCategory::Unknown,
+        name: format!("{}...{}", &pubkey.to_string()[..4], &pubkey.to_string()[40..]),
+        description: None,
+    })
 }
 
 /// Get category for an address

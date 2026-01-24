@@ -2,11 +2,11 @@
 /target
 
 # Secrets - never commit
-config.toml
+**/config.toml
 
 # Local data (database, outputs)
-/data
-/output
+**/data/
+**/output/
 
 # IDE
 .idea/

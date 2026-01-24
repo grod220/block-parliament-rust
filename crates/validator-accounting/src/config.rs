@@ -63,8 +63,8 @@ pub struct NotionConfig {
 impl FileConfig {
     /// Load configuration from a TOML file
     pub fn load(path: &Path) -> Result<Self> {
-        let content = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read config file: {}", path.display()))?;
+        let content =
+            std::fs::read_to_string(path).with_context(|| format!("Failed to read config file: {}", path.display()))?;
 
         toml::from_str(&content).with_context(|| {
             "Failed to parse config.toml. Check for:\n\
@@ -114,23 +114,16 @@ impl Config {
 
         Ok(Self {
             // Parse validator addresses from config
-            vote_account: Pubkey::from_str(&validator.vote_account)
-                .with_context(|| "Invalid vote_account address")?,
-            identity: Pubkey::from_str(&validator.identity)
-                .with_context(|| "Invalid identity address")?,
+            vote_account: Pubkey::from_str(&validator.vote_account).with_context(|| "Invalid vote_account address")?,
+            identity: Pubkey::from_str(&validator.identity).with_context(|| "Invalid identity address")?,
             withdraw_authority: Pubkey::from_str(&validator.withdraw_authority)
                 .with_context(|| "Invalid withdraw_authority address")?,
             personal_wallet: Pubkey::from_str(&validator.personal_wallet)
                 .with_context(|| "Invalid personal_wallet address")?,
 
             // Helius RPC endpoint (has historical transaction data)
-            rpc_url: rpc_url.unwrap_or_else(|| {
-                format!(
-                    "{}{}",
-                    constants::HELIUS_RPC_BASE,
-                    &file_config.api_keys.helius
-                )
-            }),
+            rpc_url: rpc_url
+                .unwrap_or_else(|| format!("{}{}", constants::HELIUS_RPC_BASE, &file_config.api_keys.helius)),
 
             // CoinGecko API key for price lookups
             coingecko_api_key: file_config.api_keys.coingecko.clone(),
@@ -154,9 +147,7 @@ impl Config {
 
     /// Check if a pubkey is one of our validator accounts
     pub fn is_our_account(&self, pubkey: &Pubkey) -> bool {
-        *pubkey == self.vote_account
-            || *pubkey == self.identity
-            || *pubkey == self.withdraw_authority
+        *pubkey == self.vote_account || *pubkey == self.identity || *pubkey == self.withdraw_authority
     }
 
     /// Check if a pubkey is any account we care about (including personal wallet)
@@ -182,8 +173,7 @@ impl Config {
             return 0.0; // Invalid date
         };
 
-        let months_diff = (date.year() - acceptance.year()) * 12
-            + (date.month() as i32 - acceptance.month() as i32);
+        let months_diff = (date.year() - acceptance.year()) * 12 + (date.month() as i32 - acceptance.month() as i32);
 
         if months_diff < 0 {
             0.0

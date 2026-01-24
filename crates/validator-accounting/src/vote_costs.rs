@@ -62,8 +62,7 @@ pub struct EpochVoteCostInfo {
 
 /// Load historical vote cost data from a JSON file
 pub fn load_historical_vote_costs(path: &Path) -> Result<HistoricalVoteCosts> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
+    let content = std::fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
 
     serde_json::from_str(&content).with_context(|| "Failed to parse historical vote costs JSON")
 }
@@ -147,10 +146,7 @@ mod tests {
         let cost = estimate_vote_cost(900);
         assert_eq!(cost.epoch, 900);
         assert_eq!(cost.vote_count, TYPICAL_VOTES_PER_EPOCH);
-        assert_eq!(
-            cost.total_fee_lamports,
-            TYPICAL_VOTES_PER_EPOCH * LAMPORTS_PER_VOTE
-        );
+        assert_eq!(cost.total_fee_lamports, TYPICAL_VOTES_PER_EPOCH * LAMPORTS_PER_VOTE);
         assert!((cost.total_fee_sol - TYPICAL_COST_PER_EPOCH_SOL).abs() < 0.01);
         assert_eq!(cost.source, "estimated");
     }

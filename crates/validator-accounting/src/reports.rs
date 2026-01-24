@@ -10,7 +10,7 @@ use crate::constants;
 use crate::expenses::{Expense, ExpenseCategory};
 use crate::jito::MevClaim;
 use crate::leader_fees::EpochLeaderFees;
-use crate::prices::{get_price, PriceCache};
+use crate::prices::{PriceCache, get_price};
 use crate::transactions::{CategorizedTransfers, EpochReward};
 use crate::vote_costs::EpochVoteCost;
 
@@ -27,11 +27,7 @@ pub struct ReportData<'a> {
 }
 
 /// Generate all CSV reports
-pub fn generate_all_reports(
-    output_dir: &Path,
-    data: &ReportData,
-    year_filter: Option<i32>,
-) -> Result<()> {
+pub fn generate_all_reports(output_dir: &Path, data: &ReportData, year_filter: Option<i32>) -> Result<()> {
     generate_income_ledger(
         output_dir,
         data.rewards,
@@ -40,13 +36,7 @@ pub fn generate_all_reports(
         data.leader_fees,
         data.prices,
     )?;
-    generate_expense_ledger(
-        output_dir,
-        data.expenses,
-        data.vote_costs,
-        data.prices,
-        data.config,
-    )?;
+    generate_expense_ledger(output_dir, data.expenses, data.vote_costs, data.prices, data.config)?;
     generate_treasury_ledger(output_dir, data.categorized, data.prices)?;
     generate_summary(output_dir, data, year_filter)?;
 
@@ -152,8 +142,7 @@ fn generate_income_ledger(
             &format!(
                 "{}% commission on {:.4} SOL tips",
                 if claim.total_tips_lamports > 0 {
-                    (claim.commission_lamports as f64 / claim.total_tips_lamports as f64 * 100.0)
-                        .round() as u64
+                    (claim.commission_lamports as f64 / claim.total_tips_lamports as f64 * 100.0).round() as u64
                 } else {
                     0
                 },
@@ -224,10 +213,8 @@ fn generate_expense_ledger(
         let gross_usd = cost.total_fee_sol * price;
 
         // Calculate SFDP coverage for this epoch's date
-        let parsed_date =
-            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap_or_else(|_| {
-                chrono::NaiveDate::parse_from_str(constants::FALLBACK_DATE, "%Y-%m-%d").unwrap()
-            });
+        let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .unwrap_or_else(|_| chrono::NaiveDate::parse_from_str(constants::FALLBACK_DATE, "%Y-%m-%d").unwrap());
         let coverage = config.sfdp_coverage_percent(&parsed_date);
         let net_usd = gross_usd * (1.0 - coverage);
 
@@ -271,11 +258,7 @@ fn generate_expense_ledger(
 }
 
 /// Generate treasury_ledger.csv (transfers, seeding, withdrawals)
-fn generate_treasury_ledger(
-    output_dir: &Path,
-    categorized: &CategorizedTransfers,
-    prices: &PriceCache,
-) -> Result<()> {
+fn generate_treasury_ledger(output_dir: &Path, categorized: &CategorizedTransfers, prices: &PriceCache) -> Result<()> {
     let path = output_dir.join(constants::TREASURY_LEDGER_FILENAME);
     let mut wtr = Writer::from_path(&path)?;
 
@@ -454,10 +437,8 @@ fn generate_summary(output_dir: &Path, data: &ReportData, year_filter: Option<i3
             let gross_usd = cost.total_fee_sol * price;
 
             // Calculate SFDP coverage for net cost
-            let parsed_date =
-                chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap_or_else(|_| {
-                    chrono::NaiveDate::parse_from_str(constants::FALLBACK_DATE, "%Y-%m-%d").unwrap()
-                });
+            let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                .unwrap_or_else(|_| chrono::NaiveDate::parse_from_str(constants::FALLBACK_DATE, "%Y-%m-%d").unwrap());
             let coverage = data.config.sfdp_coverage_percent(&parsed_date);
             let net_usd = gross_usd * (1.0 - coverage);
 
@@ -503,10 +484,7 @@ fn generate_summary(output_dir: &Path, data: &ReportData, year_filter: Option<i3
     // Filter by year if specified
     let months: Vec<_> = if let Some(year) = year_filter {
         let year_prefix = format!("{}-", year);
-        months
-            .into_iter()
-            .filter(|m| m.starts_with(&year_prefix))
-            .collect()
+        months.into_iter().filter(|m| m.starts_with(&year_prefix)).collect()
     } else {
         months
     };
@@ -623,11 +601,7 @@ struct MonthlyData {
 
 /// Normalize -0.0 to 0.0 for cleaner display
 fn normalize_zero(val: f64) -> f64 {
-    if val == 0.0 {
-        0.0
-    } else {
-        val
-    }
+    if val == 0.0 { 0.0 } else { val }
 }
 
 /// Print summary to console
@@ -661,10 +635,7 @@ pub fn print_summary(data: &ReportData, year_filter: Option<i32>) {
         .iter()
         .filter(|r| r.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|r| {
-            let price = get_price(
-                data.prices,
-                r.date.as_deref().unwrap_or(constants::FALLBACK_DATE),
-            );
+            let price = get_price(data.prices, r.date.as_deref().unwrap_or(constants::FALLBACK_DATE));
             r.amount_sol * price
         })
         .sum();
@@ -686,10 +657,7 @@ pub fn print_summary(data: &ReportData, year_filter: Option<i32>) {
             .iter()
             .filter(|t| t.date.as_deref().map(&matches_year).unwrap_or(false))
             .map(|t| {
-                let price = get_price(
-                    data.prices,
-                    t.date.as_deref().unwrap_or(constants::FALLBACK_DATE),
-                );
+                let price = get_price(data.prices, t.date.as_deref().unwrap_or(constants::FALLBACK_DATE));
                 t.amount_sol * price
             })
             .sum();
@@ -707,10 +675,7 @@ pub fn print_summary(data: &ReportData, year_filter: Option<i32>) {
             .iter()
             .filter(|c| c.date.as_deref().map(&matches_year).unwrap_or(false))
             .map(|c| {
-                let price = get_price(
-                    data.prices,
-                    c.date.as_deref().unwrap_or(constants::FALLBACK_DATE),
-                );
+                let price = get_price(data.prices, c.date.as_deref().unwrap_or(constants::FALLBACK_DATE));
                 c.amount_sol * price
             })
             .sum();
@@ -729,10 +694,7 @@ pub fn print_summary(data: &ReportData, year_filter: Option<i32>) {
         .iter()
         .filter(|f| f.date.as_deref().map(&matches_year).unwrap_or(false))
         .map(|f| {
-            let price = get_price(
-                data.prices,
-                f.date.as_deref().unwrap_or(constants::FALLBACK_DATE),
-            );
+            let price = get_price(data.prices, f.date.as_deref().unwrap_or(constants::FALLBACK_DATE));
             f.total_fees_sol * price
         })
         .sum();
@@ -766,10 +728,8 @@ pub fn print_summary(data: &ReportData, year_filter: Option<i32>) {
         let gross_usd = cost.total_fee_sol * price;
 
         // Calculate SFDP coverage
-        let parsed_date =
-            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap_or_else(|_| {
-                chrono::NaiveDate::parse_from_str(constants::FALLBACK_DATE, "%Y-%m-%d").unwrap()
-            });
+        let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .unwrap_or_else(|_| chrono::NaiveDate::parse_from_str(constants::FALLBACK_DATE, "%Y-%m-%d").unwrap());
         let coverage = data.config.sfdp_coverage_percent(&parsed_date);
         let net_usd = gross_usd * (1.0 - coverage);
 
@@ -840,23 +800,11 @@ pub fn print_summary(data: &ReportData, year_filter: Option<i32>) {
         "  SFDP Offset:                   -${:>10.2}",
         total_vote_costs_gross_usd - total_vote_costs_net_usd
     );
-    println!(
-        "  Vote Fees (net):                ${:>10.2}",
-        total_vote_costs_net_usd
-    );
-    println!(
-        "  Hosting:                        ${:>10.2}",
-        hosting_expenses
-    );
-    println!(
-        "  Contractor:                     ${:>10.2}",
-        contractor_expenses
-    );
+    println!("  Vote Fees (net):                ${:>10.2}", total_vote_costs_net_usd);
+    println!("  Hosting:                        ${:>10.2}", hosting_expenses);
+    println!("  Contractor:                     ${:>10.2}", contractor_expenses);
     println!("  ─────────────────────────────────────────────");
-    println!(
-        "  Total Expenses:                 ${:>10.2}",
-        total_expenses_usd
-    );
+    println!("  Total Expenses:                 ${:>10.2}", total_expenses_usd);
 
     println!("\nPROFIT/LOSS:");
     println!("  Net Profit:                     ${:>10.2}", net_profit);
