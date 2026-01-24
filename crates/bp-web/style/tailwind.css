@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: monospace;
+  --font-mono: monospace;
+}
+
+/* Manpage / Paper aesthetic */
+:root {
+  --paper: #f8f6f1;
+  --ink: #1a1a1a;
+  --ink-light: #666;
+  --link: #0066cc;
+  --rule: #ccc;
+}
+
+@layer base {
+  html, body {
+    background-color: var(--paper);
+    font-family: monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    margin: 0;
+  }
+}
+
+/* Links */
+a {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* Selection */
+::selection {
+  background-color: var(--ink);
+  color: var(--paper);
+}
+
+/* Print styles */
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+
+  a {
+    color: black;
+  }
+}
+
+/* Section header animations */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes flow {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+.section-flow-line {
+  animation: flow 2s ease-in-out infinite;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

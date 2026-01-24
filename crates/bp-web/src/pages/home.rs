@@ -1,6 +1,6 @@
+use crate::config::CONFIG;
 use leptos::prelude::*;
 use leptos_router::components::A;
-use shared::CONFIG;
 
 use crate::components::{AnimatedGradientDashBorder, Metrics, Section};
 

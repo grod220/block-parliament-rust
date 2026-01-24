@@ -1,5 +1,5 @@
+use crate::config::CONFIG;
 use leptos::prelude::*;
-use shared::CONFIG;
 
 use crate::api::{
     JitoMevHistory, NetworkComparison, SfdpStatus, StakewizValidator, format_lamports_to_sol, format_percent,
@@ -47,8 +47,7 @@ pub fn Metrics() -> impl IntoView {
         }>
             {move || {
                 metrics.get().map(|result| {
-                    // Dereference SendWrapper to access inner Option
-                    match &*result {
+                    match result {
                         Some(data) => view! { <MetricsContent data=data.clone() /> }.into_any(),
                         None => view! {
                             <div class="text-[var(--ink-light)]">

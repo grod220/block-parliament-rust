@@ -13,21 +13,18 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-# Shared config crate
-shared = { path = "crates/shared" }
-
-# Leptos (CSR mode)
-leptos = { version = "0.7", features = ["csr"] }
-leptos_router = "0.7"
+# Leptos - features specified per-crate for SSR/CSR flexibility
+leptos = "0.8.15"
+leptos_router = "0.8.11"
 
 # WASM essentials
-gloo-net = "0.6"
-gloo-timers = "0.3"
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-console_error_panic_hook = "0.1"
-js-sys = "0.3"
-web-sys = { version = "0.3", features = ["Window", "MediaQueryList"] }
+gloo-net = "0.6.0"
+gloo-timers = "0.3.0"
+wasm-bindgen = "0.2.108"
+wasm-bindgen-futures = "0.4.58"
+console_error_panic_hook = "0.1.7"
+js-sys = "0.3.85"
+web-sys = { version = "0.3.85", features = ["Window", "MediaQueryList"] }
 
 # Solana
 solana-client = "3.1.7"

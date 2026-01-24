@@ -1,11 +1,12 @@
-use gloo_net::http::Request;
-use serde::Deserialize;
-use shared::CONFIG;
+use crate::config::CONFIG;
+use serde::{Deserialize, Serialize};
+
+use super::http::get_json;
 
 const SFDP_API: &str = "https://api.solana.org/api/community/v1/sfdp_participants";
 
 /// SFDP (Solana Foundation Delegation Program) status
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct SfdpStatus {
     pub is_participant: bool,
@@ -25,18 +26,7 @@ struct SfdpParticipant {
 
 /// Check SFDP participation status
 pub async fn get_sfdp_status() -> Option<SfdpStatus> {
-    let response = Request::get(SFDP_API)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .ok()?;
-
-    if !response.ok() {
-        web_sys::console::error_1(&format!("SFDP API error: {}", response.status()).into());
-        return None;
-    }
-
-    let participants: Vec<SfdpParticipant> = response.json().await.ok()?;
+    let participants: Vec<SfdpParticipant> = get_json(SFDP_API).await?;
 
     // Find our entry
     let our_entry = participants.into_iter().find(|p| {

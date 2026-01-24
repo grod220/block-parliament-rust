@@ -1,4 +1,4 @@
-/// Static validator configuration - ported from lib/config.ts
+/// Static validator configuration
 pub struct Config {
     pub name: &'static str,
     pub tagline: &'static str,

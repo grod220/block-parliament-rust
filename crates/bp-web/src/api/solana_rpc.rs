@@ -1,10 +1,11 @@
-use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
+
+use super::http::post_json;
 
 const RPC_ENDPOINT: &str = "https://api.mainnet-beta.solana.com";
 
 /// Network comparison stats for a validator
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct NetworkComparison {
     pub total_validators: usize,
@@ -54,20 +55,7 @@ pub async fn get_network_comparison(
 
     let body = serde_json::to_string(&request).ok()?;
 
-    let response = Request::post(RPC_ENDPOINT)
-        .header("Content-Type", "application/json")
-        .body(body)
-        .ok()?
-        .send()
-        .await
-        .ok()?;
-
-    if !response.ok() {
-        web_sys::console::error_1(&format!("RPC error: {}", response.status()).into());
-        return None;
-    }
-
-    let data: RpcResponse = response.json().await.ok()?;
+    let data: RpcResponse = post_json(RPC_ENDPOINT, &body).await?;
     let validators = data.result?.current;
     let total_validators = validators.len();
 
@@ -101,7 +89,7 @@ pub async fn get_network_comparison(
     Some(NetworkComparison {
         total_validators,
         skip_rate_percentile: skip_rate_percentile.clamp(1, 100),
-        vote_success_percentile: 10, // Placeholder - would need more data
+        vote_success_percentile: 10, // Placeholder
         stake_percentile: stake_percentile.clamp(1, 100),
         network_avg_skip_rate,
         network_avg_vote_success,

@@ -1,9 +1,10 @@
-use gloo_net::http::Request;
-use serde::Deserialize;
-use shared::CONFIG;
+use crate::config::CONFIG;
+use serde::{Deserialize, Serialize};
+
+use super::http::get_text;
 
 /// Stakewiz validator data response
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct StakewizValidator {
     pub rank: u32,
@@ -43,21 +44,10 @@ pub struct StakewizValidator {
 pub async fn get_validator_data() -> Option<StakewizValidator> {
     let url = format!("https://api.stakewiz.com/validator/{}", CONFIG.vote_account);
 
-    let response = Request::get(&url)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .ok()?;
-
-    if !response.ok() {
-        web_sys::console::error_1(&format!("Stakewiz API error: {}", response.status()).into());
-        return None;
-    }
+    let text = get_text(&url).await?;
 
     // Stakewiz returns `false` for unknown validators
-    let text = response.text().await.ok()?;
     if text == "false" {
-        web_sys::console::error_1(&"Validator not found on Stakewiz".into());
         return None;
     }
 
@@ -67,7 +57,6 @@ pub async fn get_validator_data() -> Option<StakewizValidator> {
 /// Format stake in SOL with commas
 pub fn format_stake(stake: f64) -> String {
     let rounded = stake.round() as i64;
-    // Simple comma formatting
     let s = rounded.to_string();
     let mut result = String::new();
     for (i, c) in s.chars().rev().enumerate() {

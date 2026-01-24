@@ -1,11 +1,12 @@
-use gloo_net::http::Request;
-use serde::Deserialize;
-use shared::CONFIG;
+use crate::config::CONFIG;
+use serde::{Deserialize, Serialize};
+
+use super::http::get_text;
 
 const JITO_API_BASE: &str = "https://kobe.mainnet.jito.network";
 
 /// Single epoch reward data from Jito
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct JitoEpochReward {
     pub epoch: u64,
@@ -33,7 +34,7 @@ impl JitoEpochReward {
 }
 
 /// MEV rewards history for a validator
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct JitoMevHistory {
     pub vote_account: String,
@@ -52,18 +53,7 @@ enum JitoApiResponse {
 pub async fn get_jito_mev_history(epoch_count: usize) -> Option<JitoMevHistory> {
     let url = format!("{}/api/v1/validators/{}", JITO_API_BASE, CONFIG.vote_account);
 
-    let response = Request::get(&url)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .ok()?;
-
-    if !response.ok() {
-        web_sys::console::error_1(&format!("Jito API error: {}", response.status()).into());
-        return None;
-    }
-
-    let text = response.text().await.ok()?;
+    let text = get_text(&url).await?;
     let data: JitoApiResponse = serde_json::from_str(&text).ok()?;
 
     let epochs_array = match data {
